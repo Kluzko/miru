@@ -1,0 +1,265 @@
+use crate::domain::{entities::Anime, events::AnimeEvent, repositories::AnimeRepository};
+use crate::infrastructure::external::jikan::JikanClient;
+use crate::shared::errors::{AppError, AppResult};
+use std::sync::Arc;
+use tokio::time::{sleep, Duration};
+
+pub struct ImportService {
+    anime_repo: Arc<dyn AnimeRepository>,
+    jikan_client: Arc<JikanClient>,
+}
+
+impl ImportService {
+    pub fn new(anime_repo: Arc<dyn AnimeRepository>, jikan_client: Arc<JikanClient>) -> Self {
+        Self {
+            anime_repo,
+            jikan_client,
+        }
+    }
+
+    pub async fn import_anime_batch(&self, titles: Vec<String>) -> AppResult<ImportResult> {
+        let mut imported = Vec::new();
+        let mut failed = Vec::new();
+        let batch_size = 3;
+        let delay_between_batches = Duration::from_millis(1000);
+
+        // Process in batches to respect rate limits
+        for chunk in titles.chunks(batch_size) {
+            let mut batch_futures = Vec::new();
+
+            for title in chunk {
+                let title_clone = title.clone();
+                let jikan_client = Arc::clone(&self.jikan_client);
+
+                batch_futures.push(async move {
+                    (
+                        title_clone.clone(),
+                        jikan_client.search_anime(&title_clone, 1).await,
+                    )
+                });
+            }
+
+            // Execute batch concurrently
+            let results = futures::future::join_all(batch_futures).await;
+
+            for (title, result) in results {
+                match result {
+                    Ok(anime_list) if !anime_list.is_empty() => {
+                        // Take the first result
+                        let anime = anime_list.into_iter().next().unwrap();
+
+                        // Check if already exists
+                        if let Some(mal_id) = anime.mal_id {
+                            if let Ok(Some(_)) = self.anime_repo.find_by_mal_id(mal_id).await {
+                                failed.push(ImportError {
+                                    title: title.clone(),
+                                    reason: "Already exists in database".to_string(),
+                                });
+                                continue;
+                            }
+                        }
+
+                        // Save to database
+                        match self.anime_repo.save(&anime).await {
+                            Ok(saved_anime) => {
+                                imported.push(ImportedAnime {
+                                    title: saved_anime.title.clone(),
+                                    mal_id: saved_anime.mal_id,
+                                    id: saved_anime.id,
+                                });
+                            }
+                            Err(e) => {
+                                failed.push(ImportError {
+                                    title,
+                                    reason: format!("Failed to save: {}", e),
+                                });
+                            }
+                        }
+                    }
+                    Ok(_) => {
+                        failed.push(ImportError {
+                            title,
+                            reason: "No results found".to_string(),
+                        });
+                    }
+                    Err(e) => {
+                        failed.push(ImportError {
+                            title,
+                            reason: format!("Search failed: {}", e),
+                        });
+                    }
+                }
+            }
+
+            // Delay between batches to respect rate limits
+            if chunk.len() == batch_size {
+                sleep(delay_between_batches).await;
+            }
+        }
+
+        Ok(ImportResult {
+            imported,
+            failed,
+            total: titles.len(),
+        })
+    }
+
+    pub async fn import_from_mal_ids(&self, mal_ids: Vec<i32>) -> AppResult<ImportResult> {
+        let mut imported = Vec::new();
+        let mut failed = Vec::new();
+        let delay_between_requests = Duration::from_millis(1000);
+
+        let total = mal_ids.len(); // <— take len before moving the Vec
+
+        for mal_id in mal_ids {
+            // already-exists check
+            if let Ok(Some(_)) = self.anime_repo.find_by_mal_id(mal_id).await {
+                failed.push(ImportError {
+                    title: format!("MAL ID: {}", mal_id),
+                    reason: "Already exists in database".to_string(),
+                });
+                continue;
+            }
+
+            // fetch + save
+            match self.jikan_client.get_anime_by_id(mal_id).await {
+                Ok(Some(anime)) => match self.anime_repo.save(&anime).await {
+                    Ok(saved_anime) => imported.push(ImportedAnime {
+                        title: saved_anime.title.clone(),
+                        mal_id: saved_anime.mal_id,
+                        id: saved_anime.id,
+                    }),
+                    Err(e) => failed.push(ImportError {
+                        title: format!("MAL ID: {}", mal_id),
+                        reason: format!("Failed to save: {}", e),
+                    }),
+                },
+                Ok(None) => failed.push(ImportError {
+                    title: format!("MAL ID: {}", mal_id),
+                    reason: "Anime not found".to_string(),
+                }),
+                Err(e) => failed.push(ImportError {
+                    title: format!("MAL ID: {}", mal_id),
+                    reason: format!("Fetch failed: {}", e),
+                }),
+            }
+
+            sleep(delay_between_requests).await;
+        }
+
+        Ok(ImportResult {
+            imported,
+            failed,
+            total,
+        })
+    }
+
+    pub async fn import_from_csv(&self, csv_content: &str) -> AppResult<ImportResult> {
+        let mut reader = csv::Reader::from_reader(csv_content.as_bytes());
+        let mut titles = Vec::new();
+
+        for result in reader.records() {
+            match result {
+                Ok(record) => {
+                    // Assume first column is title
+                    if let Some(title) = record.get(0) {
+                        titles.push(title.to_string());
+                    }
+                }
+                Err(e) => {
+                    return Err(AppError::InvalidInput(format!("Invalid CSV: {}", e)));
+                }
+            }
+        }
+
+        if titles.is_empty() {
+            return Err(AppError::InvalidInput("No titles found in CSV".to_string()));
+        }
+
+        self.import_anime_batch(titles).await
+    }
+
+    pub async fn import_seasonal(&self, year: i32, season: &str) -> AppResult<ImportResult> {
+        let mut imported = Vec::new();
+        let mut failed = Vec::new();
+        let mut page = 1;
+        let max_pages = 5; // Limit to prevent too many requests
+
+        loop {
+            match self
+                .jikan_client
+                .get_seasonal_anime(year, season, page)
+                .await
+            {
+                Ok(anime_list) if !anime_list.is_empty() => {
+                    for anime in anime_list {
+                        // Check if already exists
+                        if let Some(mal_id) = anime.mal_id {
+                            if let Ok(Some(_)) = self.anime_repo.find_by_mal_id(mal_id).await {
+                                continue; // Skip if already exists
+                            }
+                        }
+
+                        // Save to database
+                        match self.anime_repo.save(&anime).await {
+                            Ok(saved_anime) => {
+                                imported.push(ImportedAnime {
+                                    title: saved_anime.title.clone(),
+                                    mal_id: saved_anime.mal_id,
+                                    id: saved_anime.id,
+                                });
+                            }
+                            Err(e) => {
+                                failed.push(ImportError {
+                                    title: anime.title.clone(),
+                                    reason: format!("Failed to save: {}", e),
+                                });
+                            }
+                        }
+                    }
+
+                    page += 1;
+                    if page > max_pages {
+                        break;
+                    }
+
+                    // Delay between pages
+                    sleep(Duration::from_millis(1000)).await;
+                }
+                Ok(_) => break, // No more results
+                Err(e) => {
+                    return Err(AppError::ExternalServiceError(format!(
+                        "Failed to fetch seasonal anime: {}",
+                        e
+                    )));
+                }
+            }
+        }
+
+        Ok(ImportResult {
+            total: imported.len() + failed.len(),
+            imported,
+            failed,
+        })
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ImportResult {
+    pub imported: Vec<ImportedAnime>,
+    pub failed: Vec<ImportError>,
+    pub total: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ImportedAnime {
+    pub title: String,
+    pub mal_id: Option<i32>,
+    pub id: uuid::Uuid,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ImportError {
+    pub title: String,
+    pub reason: String,
+}

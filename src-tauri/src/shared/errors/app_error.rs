@@ -106,6 +106,12 @@ impl From<std::num::ParseFloatError> for AppError {
     }
 }
 
+impl From<std::env::VarError> for AppError {
+    fn from(err: std::env::VarError) -> Self {
+        AppError::InternalError(format!("Environment variable error: {}", err))
+    }
+}
+
 // Convert AppError to a format suitable for Tauri commands
 impl AppError {
     pub fn to_string(&self) -> String {
