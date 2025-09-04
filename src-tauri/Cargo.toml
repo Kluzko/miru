@@ -1,0 +1,63 @@
+[package]
+name = "miru"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "miru_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Tauri
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Database
+diesel = { version = "2.2.0", features = [
+    "postgres",
+    "uuid",
+    "chrono",
+    "r2d2",
+] }
+
+diesel_migrations = "2.2.0"
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+
+# Error handling
+thiserror = "2.0.16"
+anyhow = "1.0"
+
+# Utils
+dotenvy = "0.15"
+uuid = { version = "1.6", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1.10"
+
+# Logging
+env_logger = "0.10"
+log = "0.4"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Cache
+redis = { version = "0.24", features = ["tokio-comp", "aio"] }
