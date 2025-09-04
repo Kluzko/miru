@@ -1,4 +1,4 @@
-use crate::domain::{entities::Anime, events::AnimeEvent, repositories::AnimeRepository};
+use crate::domain::repositories::AnimeRepository;
 use crate::infrastructure::external::jikan::JikanClient;
 use crate::shared::errors::{AppError, AppResult};
 use std::sync::Arc;

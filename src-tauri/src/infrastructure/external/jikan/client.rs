@@ -1,6 +1,6 @@
 use crate::domain::entities::Anime;
 use crate::shared::{
-    errors::{ApiError, AppError, AppResult},
+    errors::{AppError, AppResult},
     utils::RateLimiter,
 };
 use reqwest::{Client, StatusCode};

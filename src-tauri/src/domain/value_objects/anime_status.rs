@@ -12,15 +12,6 @@ pub enum AnimeStatus {
 }
 
 impl AnimeStatus {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            AnimeStatus::Airing => "airing",
-            AnimeStatus::Finished => "finished",
-            AnimeStatus::NotYetAired => "not_yet_aired",
-            AnimeStatus::Unknown => "unknown",
-        }
-    }
-
     pub fn display_name(&self) -> &'static str {
         match self {
             AnimeStatus::Airing => "Currently Airing",

@@ -48,14 +48,6 @@ impl AnimeTier {
             }
         }
     }
-
-    pub fn is_top_tier(&self) -> bool {
-        self.level <= 2
-    }
-
-    pub fn is_recommended(&self) -> bool {
-        self.level <= 3
-    }
 }
 
 impl Default for AnimeTier {

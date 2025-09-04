@@ -1,6 +1,5 @@
 use crate::application::services::anime_service::AnimeService;
 use crate::domain::entities::Anime;
-use crate::shared::errors::AppResult;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::State;

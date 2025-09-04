@@ -1,6 +1,5 @@
 use crate::shared::errors::AppError;
 use diesel::pg::PgConnection;
-use diesel::prelude::*;
 use diesel::r2d2::{self, ConnectionManager, Pool};
 use std::env;
 
@@ -28,9 +27,5 @@ impl Database {
 
     pub fn get_connection(&self) -> Result<DbConnection, AppError> {
         self.pool.get().map_err(AppError::from)
-    }
-
-    pub fn pool(&self) -> &DbPool {
-        &self.pool
     }
 }

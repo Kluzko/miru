@@ -1,7 +1,6 @@
 use crate::domain::{entities::Anime, repositories::AnimeRepository, services::ScoreCalculator};
 use crate::infrastructure::{cache::RedisCache, external::jikan::JikanClient};
 use crate::shared::errors::AppResult;
-use serde_json;
 use std::sync::Arc;
 use uuid::Uuid;
 

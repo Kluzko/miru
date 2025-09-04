@@ -1,6 +1,5 @@
 use crate::domain::{
-    entities::{Anime, Collection, CollectionAnime},
-    events::{AnimeEvent, CollectionEvent},
+    entities::{Anime, Collection},
     repositories::{AnimeRepository, CollectionRepository},
 };
 use crate::infrastructure::cache::RedisCache;

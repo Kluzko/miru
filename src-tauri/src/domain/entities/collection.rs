@@ -67,19 +67,6 @@ impl Collection {
         self.anime_ids.contains(anime_id)
     }
 
-    pub fn anime_count(&self) -> usize {
-        self.anime_ids.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.anime_ids.is_empty()
-    }
-
-    pub fn clear(&mut self) {
-        self.anime_ids.clear();
-        self.updated_at = Utc::now();
-    }
-
     pub fn rename(&mut self, new_name: String) {
         self.name = new_name;
         self.updated_at = Utc::now();
@@ -92,26 +79,6 @@ impl Collection {
 }
 
 impl CollectionAnime {
-    pub fn new(collection_id: Uuid, anime_id: Uuid) -> Self {
-        Self {
-            collection_id,
-            anime_id,
-            added_at: Utc::now(),
-            user_score: None,
-            notes: None,
-        }
-    }
-
-    pub fn with_user_score(mut self, score: f32) -> Self {
-        self.user_score = Some(score);
-        self
-    }
-
-    pub fn with_notes(mut self, notes: String) -> Self {
-        self.notes = Some(notes);
-        self
-    }
-
     pub fn update_score(&mut self, score: Option<f32>) {
         self.user_score = score;
     }
