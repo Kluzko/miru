@@ -104,56 +104,6 @@ impl ImportService {
         })
     }
 
-    pub async fn import_from_mal_ids(&self, mal_ids: Vec<i32>) -> AppResult<ImportResult> {
-        let mut imported = Vec::new();
-        let mut failed = Vec::new();
-        let delay_between_requests = Duration::from_millis(1000);
-
-        let total = mal_ids.len(); // <— take len before moving the Vec
-
-        for mal_id in mal_ids {
-            // already-exists check
-            if let Ok(Some(_)) = self.anime_repo.find_by_mal_id(mal_id).await {
-                failed.push(ImportError {
-                    title: format!("MAL ID: {}", mal_id),
-                    reason: "Already exists in database".to_string(),
-                });
-                continue;
-            }
-
-            // fetch + save
-            match self.jikan_client.get_anime_by_id(mal_id).await {
-                Ok(Some(anime)) => match self.anime_repo.save(&anime).await {
-                    Ok(saved_anime) => imported.push(ImportedAnime {
-                        title: saved_anime.title.clone(),
-                        mal_id: saved_anime.mal_id,
-                        id: saved_anime.id,
-                    }),
-                    Err(e) => failed.push(ImportError {
-                        title: format!("MAL ID: {}", mal_id),
-                        reason: format!("Failed to save: {}", e),
-                    }),
-                },
-                Ok(None) => failed.push(ImportError {
-                    title: format!("MAL ID: {}", mal_id),
-                    reason: "Anime not found".to_string(),
-                }),
-                Err(e) => failed.push(ImportError {
-                    title: format!("MAL ID: {}", mal_id),
-                    reason: format!("Fetch failed: {}", e),
-                }),
-            }
-
-            sleep(delay_between_requests).await;
-        }
-
-        Ok(ImportResult {
-            imported,
-            failed,
-            total,
-        })
-    }
-
     pub async fn import_from_csv(&self, csv_content: &str) -> AppResult<ImportResult> {
         let mut reader = csv::Reader::from_reader(csv_content.as_bytes());
         let mut titles = Vec::new();
@@ -177,70 +127,6 @@ impl ImportService {
         }
 
         self.import_anime_batch(titles).await
-    }
-
-    pub async fn import_seasonal(&self, year: i32, season: &str) -> AppResult<ImportResult> {
-        let mut imported = Vec::new();
-        let mut failed = Vec::new();
-        let mut page = 1;
-        let max_pages = 5; // Limit to prevent too many requests
-
-        loop {
-            match self
-                .jikan_client
-                .get_seasonal_anime(year, season, page)
-                .await
-            {
-                Ok(anime_list) if !anime_list.is_empty() => {
-                    for anime in anime_list {
-                        // Check if already exists
-                        if let Some(mal_id) = anime.mal_id {
-                            if let Ok(Some(_)) = self.anime_repo.find_by_mal_id(mal_id).await {
-                                continue; // Skip if already exists
-                            }
-                        }
-
-                        // Save to database
-                        match self.anime_repo.save(&anime).await {
-                            Ok(saved_anime) => {
-                                imported.push(ImportedAnime {
-                                    title: saved_anime.title.clone(),
-                                    mal_id: saved_anime.mal_id,
-                                    id: saved_anime.id,
-                                });
-                            }
-                            Err(e) => {
-                                failed.push(ImportError {
-                                    title: anime.title.clone(),
-                                    reason: format!("Failed to save: {}", e),
-                                });
-                            }
-                        }
-                    }
-
-                    page += 1;
-                    if page > max_pages {
-                        break;
-                    }
-
-                    // Delay between pages
-                    sleep(Duration::from_millis(1000)).await;
-                }
-                Ok(_) => break, // No more results
-                Err(e) => {
-                    return Err(AppError::ExternalServiceError(format!(
-                        "Failed to fetch seasonal anime: {}",
-                        e
-                    )));
-                }
-            }
-        }
-
-        Ok(ImportResult {
-            total: imported.len() + failed.len(),
-            imported,
-            failed,
-        })
     }
 }
 

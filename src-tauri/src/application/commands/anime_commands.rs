@@ -76,39 +76,6 @@ pub async fn get_anime_by_id(
 }
 
 #[tauri::command]
-pub async fn get_anime_by_mal_id(
-    request: GetAnimeByMalIdRequest,
-    anime_service: State<'_, Arc<AnimeService>>,
-) -> Result<Option<Anime>, String> {
-    anime_service
-        .get_anime_by_mal_id(request.mal_id)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn update_anime(
-    request: UpdateAnimeRequest,
-    anime_service: State<'_, Arc<AnimeService>>,
-) -> Result<Anime, String> {
-    anime_service
-        .update_anime(&request.anime)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn delete_anime(
-    request: DeleteAnimeRequest,
-    anime_service: State<'_, Arc<AnimeService>>,
-) -> Result<(), String> {
-    anime_service
-        .delete_anime(&request.id)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
 pub async fn get_top_anime(
     request: GetTopAnimeRequest,
     anime_service: State<'_, Arc<AnimeService>>,
@@ -126,28 +93,6 @@ pub async fn get_seasonal_anime(
 ) -> Result<Vec<Anime>, String> {
     anime_service
         .get_seasonal_anime(request.year, &request.season, request.page)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn recalculate_scores(
-    request: RecalculateScoresRequest,
-    anime_service: State<'_, Arc<AnimeService>>,
-) -> Result<Anime, String> {
-    anime_service
-        .recalculate_scores(&request.id)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn get_recommendations(
-    request: GetRecommendationsRequest,
-    anime_service: State<'_, Arc<AnimeService>>,
-) -> Result<Vec<Anime>, String> {
-    anime_service
-        .get_recommendations(&request.anime_id)
         .await
         .map_err(|e| e.to_string())
 }

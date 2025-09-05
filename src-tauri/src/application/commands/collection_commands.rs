@@ -1,4 +1,4 @@
-use crate::application::services::collection_service::{CollectionService, CollectionStats};
+use crate::application::services::collection_service::CollectionService;
 use crate::application::services::import_service::{ImportResult, ImportService};
 use crate::domain::entities::{Anime, Collection};
 use serde::{Deserialize, Serialize};
@@ -191,17 +191,6 @@ pub async fn update_anime_in_collection(
 }
 
 #[tauri::command]
-pub async fn get_collection_statistics(
-    request: GetCollectionStatisticsRequest,
-    collection_service: State<'_, Arc<CollectionService>>,
-) -> Result<CollectionStats, String> {
-    collection_service
-        .get_collection_statistics(&request.collection_id)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
 pub async fn import_anime_batch(
     request: ImportAnimeBatchRequest,
     import_service: State<'_, Arc<ImportService>>,
@@ -213,34 +202,12 @@ pub async fn import_anime_batch(
 }
 
 #[tauri::command]
-pub async fn import_from_mal_ids(
-    request: ImportFromMalIdsRequest,
-    import_service: State<'_, Arc<ImportService>>,
-) -> Result<ImportResult, String> {
-    import_service
-        .import_from_mal_ids(request.mal_ids)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
 pub async fn import_from_csv(
     request: ImportFromCsvRequest,
     import_service: State<'_, Arc<ImportService>>,
 ) -> Result<ImportResult, String> {
     import_service
         .import_from_csv(&request.csv_content)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn import_seasonal(
-    request: ImportSeasonalRequest,
-    import_service: State<'_, Arc<ImportService>>,
-) -> Result<ImportResult, String> {
-    import_service
-        .import_seasonal(request.year, &request.season)
         .await
         .map_err(|e| e.to_string())
 }

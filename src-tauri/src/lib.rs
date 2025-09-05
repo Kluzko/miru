@@ -88,13 +88,8 @@ pub fn run() {
             // Anime commands
             search_anime,
             get_anime_by_id,
-            get_anime_by_mal_id,
-            update_anime,
-            delete_anime,
             get_top_anime,
             get_seasonal_anime,
-            recalculate_scores,
-            get_recommendations,
             // Collection commands
             create_collection,
             get_collection,
@@ -105,12 +100,9 @@ pub fn run() {
             remove_anime_from_collection,
             get_collection_anime,
             update_anime_in_collection,
-            get_collection_statistics,
             // Import commands
             import_anime_batch,
-            import_from_mal_ids,
             import_from_csv,
-            import_seasonal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

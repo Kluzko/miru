@@ -302,60 +302,6 @@ impl CollectionService {
         Ok(())
     }
 
-    pub async fn get_collection_statistics(
-        &self,
-        collection_id: &Uuid,
-    ) -> AppResult<CollectionStats> {
-        // Get collection
-        let collection = self
-            .collection_repo
-            .find_by_id(collection_id)
-            .await?
-            .ok_or_else(|| {
-                AppError::NotFound(format!("Collection with ID {} not found", collection_id))
-            })?;
-
-        // Get all anime in collection
-        let anime_list = self.get_collection_anime(collection_id).await?;
-
-        // Calculate statistics
-        let total_anime = anime_list.len();
-        let total_episodes: i32 = anime_list.iter().filter_map(|a| a.episodes).sum();
-
-        let avg_score = if total_anime > 0 {
-            anime_list.iter().map(|a| a.composite_score).sum::<f32>() / total_anime as f32
-        } else {
-            0.0
-        };
-
-        let mut genre_distribution = std::collections::HashMap::new();
-        for anime in &anime_list {
-            for genre in &anime.genres {
-                *genre_distribution.entry(genre.name.clone()).or_insert(0) += 1;
-            }
-        }
-
-        let mut status_distribution = std::collections::HashMap::new();
-        for anime in &anime_list {
-            *status_distribution
-                .entry(anime.status.to_string())
-                .or_insert(0) += 1;
-        }
-
-        Ok(CollectionStats {
-            total_anime,
-            total_episodes,
-            average_score: avg_score,
-            genre_distribution,
-            status_distribution,
-            top_rated: anime_list
-                .iter()
-                .filter(|a| a.composite_score >= 8.0)
-                .cloned()
-                .collect(),
-        })
-    }
-
     async fn invalidate_collection_cache(&self, collection_id: &Uuid) -> AppResult<()> {
         let cache_keys = vec![
             format!("collection:{}", collection_id),
