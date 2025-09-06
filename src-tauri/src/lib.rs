@@ -15,6 +15,10 @@ use infrastructure::{
 use std::sync::Arc;
 use tauri::Manager;
 
+// tauri-specta: generate TS types + typed command client from Rust commands
+use specta_typescript::Typescript;
+use tauri_specta::{collect_commands, Builder as SpectaBuilder};
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Load environment variables
@@ -23,9 +27,46 @@ pub fn run() {
     // Initialize logging
     env_logger::init();
 
+    // 1) Build the specta builder with all commands
+    let specta_builder = SpectaBuilder::<tauri::Wry>::new().commands(collect_commands![
+        // Anime commands
+        search_anime,
+        get_anime_by_id,
+        get_top_anime,
+        get_seasonal_anime,
+        // Collection commands
+        create_collection,
+        get_collection,
+        get_all_collections,
+        update_collection,
+        delete_collection,
+        add_anime_to_collection,
+        remove_anime_from_collection,
+        get_collection_anime,
+        update_anime_in_collection,
+        // Import commands
+        import_anime_batch,
+        import_from_csv,
+    ]);
+
+    // 2) Export bindings in debug builds
+    #[cfg(debug_assertions)]
+    specta_builder
+        .export(Typescript::default(), "../src/types/bindings.ts")
+        .expect("tauri-specta: failed to export TypeScript bindings");
+
+    // 3) Create the invoke handler BEFORE moving `specta_builder` into the setup closure
+    let invoke_handler = specta_builder.invoke_handler();
+
     tauri::Builder::default()
+        // Tell Tauri how to invoke commands (uses the handler we created above)
+        .invoke_handler(invoke_handler)
         .plugin(tauri_plugin_opener::init())
-        .setup(|app| {
+        .setup(move |app| {
+            // If you want typed events, mount specta's event hooks here.
+            // `specta_builder` is moved into this closure (no later uses outside).
+            specta_builder.mount_events(app);
+
             // Initialize database
             let database =
                 Arc::new(Database::new().expect("Failed to initialize database connection"));
@@ -65,45 +106,23 @@ pub fn run() {
                 Arc::clone(&cache),
                 Arc::clone(&jikan_client),
             ));
-
             let collection_service = Arc::new(CollectionService::new(
                 Arc::clone(&collection_repo),
                 Arc::clone(&anime_repo),
                 Arc::clone(&cache),
             ));
-
             let import_service = Arc::new(ImportService::new(
                 Arc::clone(&anime_repo),
                 Arc::clone(&jikan_client),
             ));
 
-            // Manage state
+            // Manage state so commands can access services via `State<T>`
             app.manage(anime_service);
             app.manage(collection_service);
             app.manage(import_service);
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
-            // Anime commands
-            search_anime,
-            get_anime_by_id,
-            get_top_anime,
-            get_seasonal_anime,
-            // Collection commands
-            create_collection,
-            get_collection,
-            get_all_collections,
-            update_collection,
-            delete_collection,
-            add_anime_to_collection,
-            remove_anime_from_collection,
-            get_collection_anime,
-            update_anime_in_collection,
-            // Import commands
-            import_anime_batch,
-            import_from_csv,
-        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

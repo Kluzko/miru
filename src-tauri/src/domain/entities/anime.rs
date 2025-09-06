@@ -2,9 +2,10 @@ use super::genre::Genre;
 use crate::domain::value_objects::{AnimeStatus, AnimeTier, AnimeType, QualityMetrics};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use specta::Type;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Anime {
     pub id: Uuid,
@@ -35,7 +36,7 @@ pub struct Anime {
     pub quality_metrics: QualityMetrics,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct AiredDates {
     pub from: Option<DateTime<Utc>>,
     pub to: Option<DateTime<Utc>>,

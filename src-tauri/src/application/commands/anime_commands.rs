@@ -1,59 +1,61 @@
 use crate::application::services::anime_service::AnimeService;
 use crate::domain::entities::Anime;
 use serde::{Deserialize, Serialize};
+use specta::Type;
 use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct SearchAnimeRequest {
     pub query: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct GetAnimeByIdRequest {
     pub id: Uuid,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct GetAnimeByMalIdRequest {
     pub mal_id: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct UpdateAnimeRequest {
     pub anime: Anime,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct DeleteAnimeRequest {
     pub id: Uuid,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct GetTopAnimeRequest {
     pub page: i32,
     pub limit: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct GetSeasonalAnimeRequest {
     pub year: i32,
     pub season: String,
     pub page: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct RecalculateScoresRequest {
     pub id: Uuid,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct GetRecommendationsRequest {
     pub anime_id: Uuid,
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn search_anime(
     request: SearchAnimeRequest,
     anime_service: State<'_, Arc<AnimeService>>,
@@ -65,6 +67,7 @@ pub async fn search_anime(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_anime_by_id(
     request: GetAnimeByIdRequest,
     anime_service: State<'_, Arc<AnimeService>>,
@@ -76,6 +79,7 @@ pub async fn get_anime_by_id(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_top_anime(
     request: GetTopAnimeRequest,
     anime_service: State<'_, Arc<AnimeService>>,
@@ -87,6 +91,7 @@ pub async fn get_top_anime(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_seasonal_anime(
     request: GetSeasonalAnimeRequest,
     anime_service: State<'_, Arc<AnimeService>>,

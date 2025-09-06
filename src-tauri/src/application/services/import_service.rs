@@ -1,6 +1,7 @@
 use crate::domain::repositories::AnimeRepository;
 use crate::infrastructure::external::jikan::JikanClient;
 use crate::shared::errors::{AppError, AppResult};
+use specta::Type;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
@@ -100,7 +101,7 @@ impl ImportService {
         Ok(ImportResult {
             imported,
             failed,
-            total: titles.len(),
+            total: u32::try_from(titles.len()).unwrap_or(u32::MAX),
         })
     }
 
@@ -130,21 +131,21 @@ impl ImportService {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Type)]
 pub struct ImportResult {
     pub imported: Vec<ImportedAnime>,
     pub failed: Vec<ImportError>,
-    pub total: usize,
+    pub total: u32,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Type)]
 pub struct ImportedAnime {
     pub title: String,
     pub mal_id: Option<i32>,
     pub id: uuid::Uuid,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Type)]
 pub struct ImportError {
     pub title: String,
     pub reason: String,
