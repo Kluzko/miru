@@ -8,7 +8,6 @@ use application::{
     services::{AnimeService, CollectionService, ImportService},
 };
 use infrastructure::{
-    cache::RedisCache,
     database::{repositories::*, Database},
     external::jikan::JikanClient,
 };
@@ -85,11 +84,6 @@ pub fn run() {
                     .expect("Failed to run database migrations");
             }
 
-            // Initialize cache
-            let redis_url = std::env::var("REDIS_URL")?;
-            let cache =
-                Arc::new(RedisCache::new(&redis_url).expect("Failed to initialize Redis cache"));
-
             // Initialize external clients
             let jikan_client =
                 Arc::new(JikanClient::new().expect("Failed to initialize Jikan client"));
@@ -103,14 +97,14 @@ pub fn run() {
             // Initialize services
             let anime_service = Arc::new(AnimeService::new(
                 Arc::clone(&anime_repo),
-                Arc::clone(&cache),
                 Arc::clone(&jikan_client),
             ));
+
             let collection_service = Arc::new(CollectionService::new(
                 Arc::clone(&collection_repo),
                 Arc::clone(&anime_repo),
-                Arc::clone(&cache),
             ));
+
             let import_service = Arc::new(ImportService::new(
                 Arc::clone(&anime_repo),
                 Arc::clone(&jikan_client),

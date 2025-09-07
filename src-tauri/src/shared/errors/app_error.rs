@@ -25,9 +25,6 @@ pub enum AppError {
     #[error("Rate limit exceeded: {0}")]
     RateLimitError(String),
 
-    #[error("Cache error: {0}")]
-    CacheError(String),
-
     #[error("Serialization error: {0}")]
     SerializationError(String),
 

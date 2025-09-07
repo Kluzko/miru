@@ -2,7 +2,6 @@ use crate::domain::{
     entities::{Anime, Collection},
     repositories::{AnimeRepository, CollectionRepository},
 };
-use crate::infrastructure::cache::RedisCache;
 use crate::shared::errors::{AppError, AppResult};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -10,19 +9,16 @@ use uuid::Uuid;
 pub struct CollectionService {
     collection_repo: Arc<dyn CollectionRepository>,
     anime_repo: Arc<dyn AnimeRepository>,
-    cache: Arc<RedisCache>,
 }
 
 impl CollectionService {
     pub fn new(
         collection_repo: Arc<dyn CollectionRepository>,
         anime_repo: Arc<dyn AnimeRepository>,
-        cache: Arc<RedisCache>,
     ) -> Self {
         Self {
             collection_repo,
             anime_repo,
-            cache,
         }
     }
 
@@ -51,42 +47,19 @@ impl CollectionService {
         // Save to database
         let saved = self.collection_repo.save(&collection).await?;
 
-        // Invalidate collections cache
-        let _ = self.cache.delete("collections:all").await;
-
         Ok(saved)
     }
 
     pub async fn get_collection(&self, id: &Uuid) -> AppResult<Option<Collection>> {
-        // Check cache
-        let cache_key = format!("collection:{}", id);
-        if let Ok(Some(cached)) = self.cache.get::<Collection>(&cache_key).await {
-            return Ok(Some(cached));
-        }
-
         // Get from database
         let collection = self.collection_repo.find_by_id(id).await?;
-
-        if let Some(ref coll) = collection {
-            // Cache the result
-            let _ = self.cache.set(&cache_key, coll, 3600).await;
-        }
 
         Ok(collection)
     }
 
     pub async fn get_all_collections(&self) -> AppResult<Vec<Collection>> {
-        // Check cache
-        let cache_key = "collections:all";
-        if let Ok(Some(cached)) = self.cache.get::<Vec<Collection>>(cache_key).await {
-            return Ok(cached);
-        }
-
         // Get from database
         let collections = self.collection_repo.get_all().await?;
-
-        // Cache the results
-        let _ = self.cache.set(cache_key, &collections, 1800).await;
 
         Ok(collections)
     }
@@ -127,11 +100,6 @@ impl CollectionService {
         // Save to database
         let updated = self.collection_repo.update(&collection).await?;
 
-        // Invalidate cache
-        let cache_key = format!("collection:{}", id);
-        let _ = self.cache.delete(&cache_key).await;
-        let _ = self.cache.delete("collections:all").await;
-
         Ok(updated)
     }
 
@@ -144,15 +112,6 @@ impl CollectionService {
 
         // Delete from database
         self.collection_repo.delete(id).await?;
-
-        // Invalidate cache
-        let cache_key = format!("collection:{}", id);
-        let _ = self.cache.delete(&cache_key).await;
-        let _ = self.cache.delete("collections:all").await;
-
-        // Invalidate anime in collection cache
-        let anime_cache_key = format!("collection:{}:anime", id);
-        let _ = self.cache.delete(&anime_cache_key).await;
 
         Ok(())
     }
@@ -179,10 +138,11 @@ impl CollectionService {
             })?;
 
         // Check if anime exists
-        let anime =
-            self.anime_repo.find_by_id(anime_id).await?.ok_or_else(|| {
-                AppError::NotFound(format!("Anime with ID {} not found", anime_id))
-            })?;
+
+        self.anime_repo
+            .find_by_id(anime_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Anime with ID {} not found", anime_id)))?;
 
         // Check if already in collection
         if collection.contains_anime(anime_id) {
@@ -199,9 +159,6 @@ impl CollectionService {
         // Update collection anime_ids
         collection.add_anime(*anime_id);
         let _ = self.collection_repo.update(&collection).await;
-
-        // Invalidate cache
-        self.invalidate_collection_cache(collection_id).await?;
 
         Ok(())
     }
@@ -236,19 +193,10 @@ impl CollectionService {
         collection.remove_anime(anime_id);
         let _ = self.collection_repo.update(&collection).await;
 
-        // Invalidate cache
-        self.invalidate_collection_cache(collection_id).await?;
-
         Ok(())
     }
 
     pub async fn get_collection_anime(&self, collection_id: &Uuid) -> AppResult<Vec<Anime>> {
-        // Check cache
-        let cache_key = format!("collection:{}:anime", collection_id);
-        if let Ok(Some(cached)) = self.cache.get::<Vec<Anime>>(&cache_key).await {
-            return Ok(cached);
-        }
-
         // Check if collection exists
         let _ = self
             .collection_repo
@@ -263,9 +211,6 @@ impl CollectionService {
             .collection_repo
             .get_collection_anime(collection_id)
             .await?;
-
-        // Cache the results
-        let _ = self.cache.set(&cache_key, &anime_list, 3600).await;
 
         Ok(anime_list)
     }
@@ -295,23 +240,6 @@ impl CollectionService {
 
         // Save to database
         self.collection_repo.update_collection_entry(&entry).await?;
-
-        // Invalidate cache
-        self.invalidate_collection_cache(collection_id).await?;
-
-        Ok(())
-    }
-
-    async fn invalidate_collection_cache(&self, collection_id: &Uuid) -> AppResult<()> {
-        let cache_keys = vec![
-            format!("collection:{}", collection_id),
-            format!("collection:{}:anime", collection_id),
-            "collections:all".to_string(),
-        ];
-
-        for key in cache_keys {
-            let _ = self.cache.delete(&key).await;
-        }
 
         Ok(())
     }
