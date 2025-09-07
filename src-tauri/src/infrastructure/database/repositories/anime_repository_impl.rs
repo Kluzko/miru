@@ -150,98 +150,154 @@ impl AnimeRepositoryImpl {
             .map_err(AppError::from)
     }
 
-    async fn save_anime_genres(&self, anime_id: &Uuid, genres: &[Genre]) -> AppResult<()> {
-        use schema::{anime_genres, genres as genres_table};
+    fn save_anime_with_relations(
+        &self,
+        conn: &mut diesel::PgConnection,
+        anime: &Anime,
+    ) -> AppResult<Uuid> {
+        use schema::{
+            anime as anime_table, anime_genres, anime_studios, genres, quality_metrics, studios,
+        };
 
-        let mut conn = self.db.get_connection()?;
+        // Determine the actual anime ID to use
+        let anime_id = if let Some(mal_id) = anime.mal_id {
+            // Check if anime with this mal_id already exists
+            let existing_id = anime_table::table
+                .filter(anime_table::mal_id.eq(mal_id))
+                .select(anime_table::id)
+                .first::<Uuid>(conn)
+                .optional()?;
 
-        // Delete existing relationships
-        diesel::delete(anime_genres::table)
-            .filter(anime_genres::anime_id.eq(anime_id))
-            .execute(&mut conn)?;
+            if let Some(id) = existing_id {
+                // Update existing anime
+                let mut model = self.entity_to_model(anime);
+                model.id = id; // Use the existing ID
 
-        // Insert or get genres
-        for genre in genres {
-            // Insert genre if it doesn't exist
-            diesel::insert_into(genres_table::table)
-                .values(&GenreModel {
-                    id: genre.id,
-                    mal_id: genre.mal_id,
-                    name: genre.name.clone(),
-                })
-                .on_conflict(genres_table::id)
-                .do_nothing()
-                .execute(&mut conn)?;
+                diesel::update(anime_table::table)
+                    .filter(anime_table::id.eq(id))
+                    .set(&model)
+                    .execute(conn)?;
 
-            // Create relationship
+                id
+            } else {
+                // Insert new anime
+                let model = self.entity_to_model(anime);
+                diesel::insert_into(anime_table::table)
+                    .values(&model)
+                    .execute(conn)?;
+
+                anime.id
+            }
+        } else {
+            // No mal_id, use regular upsert by ID
+            let model = self.entity_to_model(anime);
+            diesel::insert_into(anime_table::table)
+                .values(&model)
+                .on_conflict(anime_table::id)
+                .do_update()
+                .set(&model)
+                .execute(conn)?;
+
+            anime.id
+        };
+
+        // Clear existing relationships
+        diesel::delete(anime_genres::table.filter(anime_genres::anime_id.eq(&anime_id)))
+            .execute(conn)?;
+        diesel::delete(anime_studios::table.filter(anime_studios::anime_id.eq(&anime_id)))
+            .execute(conn)?;
+
+        // Save genres
+        for genre in &anime.genres {
+            // Get or create genre
+            let genre_id = if let Some(mal_id) = genre.mal_id {
+                // Try to find by mal_id
+                let existing = genres::table
+                    .filter(genres::mal_id.eq(mal_id))
+                    .select(genres::id)
+                    .first::<Uuid>(conn)
+                    .optional()?;
+
+                if let Some(id) = existing {
+                    id
+                } else {
+                    // Create new genre
+                    diesel::insert_into(genres::table)
+                        .values(&GenreModel {
+                            id: Uuid::new_v4(),
+                            mal_id: Some(mal_id),
+                            name: genre.name.clone(),
+                        })
+                        .returning(genres::id)
+                        .get_result::<Uuid>(conn)?
+                }
+            } else {
+                // Try to find by name
+                let existing = genres::table
+                    .filter(genres::name.eq(&genre.name))
+                    .select(genres::id)
+                    .first::<Uuid>(conn)
+                    .optional()?;
+
+                if let Some(id) = existing {
+                    id
+                } else {
+                    // Create new genre
+                    diesel::insert_into(genres::table)
+                        .values(&GenreModel {
+                            id: Uuid::new_v4(),
+                            mal_id: None,
+                            name: genre.name.clone(),
+                        })
+                        .returning(genres::id)
+                        .get_result::<Uuid>(conn)?
+                }
+            };
+
+            // Create anime-genre relationship
             diesel::insert_into(anime_genres::table)
-                .values(&AnimeGenreModel {
-                    anime_id: *anime_id,
-                    genre_id: genre.id,
-                })
-                .execute(&mut conn)?;
+                .values(&AnimeGenreModel { anime_id, genre_id })
+                .execute(conn)?;
         }
 
-        Ok(())
-    }
-
-    async fn save_anime_studios(&self, anime_id: &Uuid, studio_names: &[String]) -> AppResult<()> {
-        use schema::{anime_studios, studios};
-
-        let mut conn = self.db.get_connection()?;
-
-        // Delete existing relationships
-        diesel::delete(anime_studios::table)
-            .filter(anime_studios::anime_id.eq(anime_id))
-            .execute(&mut conn)?;
-
-        // Insert studios and create relationships
-        for studio_name in studio_names {
-            let studio_id = Uuid::new_v4();
-
-            // Insert studio if it doesn't exist
-            diesel::insert_into(studios::table)
-                .values(&StudioModel {
-                    id: studio_id,
-                    name: studio_name.clone(),
-                })
-                .on_conflict(studios::name)
-                .do_nothing()
-                .execute(&mut conn)?;
-
-            // Get the actual studio id (in case it already existed)
-            let actual_studio: StudioModel = studios::table
+        // Save studios
+        for studio_name in &anime.studios {
+            // Get or create studio
+            let studio_id = studios::table
                 .filter(studios::name.eq(studio_name))
-                .first(&mut conn)?;
+                .select(studios::id)
+                .first::<Uuid>(conn)
+                .optional()?
+                .unwrap_or_else(|| {
+                    // Create new studio if it doesn't exist
+                    let new_id = Uuid::new_v4();
+                    diesel::insert_into(studios::table)
+                        .values(&StudioModel {
+                            id: new_id,
+                            name: studio_name.clone(),
+                        })
+                        .execute(conn)
+                        .ok();
+                    new_id
+                });
 
-            // Create relationship
+            // Create anime-studio relationship
             diesel::insert_into(anime_studios::table)
                 .values(&AnimeStudioModel {
-                    anime_id: *anime_id,
-                    studio_id: actual_studio.id,
+                    anime_id,
+                    studio_id,
                 })
-                .execute(&mut conn)?;
+                .execute(conn)?;
         }
 
-        Ok(())
-    }
-
-    async fn save_quality_metrics(
-        &self,
-        anime_id: &Uuid,
-        metrics: &QualityMetrics,
-    ) -> AppResult<()> {
-        use schema::quality_metrics;
-
-        let mut conn = self.db.get_connection()?;
-
+        // Save quality metrics
         let metrics_model = QualityMetricsModel {
             id: Uuid::new_v4(),
-            anime_id: *anime_id,
-            popularity_score: metrics.popularity_score,
-            engagement_score: metrics.engagement_score,
-            consistency_score: metrics.consistency_score,
-            audience_reach_score: metrics.audience_reach_score,
+            anime_id,
+            popularity_score: anime.quality_metrics.popularity_score,
+            engagement_score: anime.quality_metrics.engagement_score,
+            consistency_score: anime.quality_metrics.consistency_score,
+            audience_reach_score: anime.quality_metrics.audience_reach_score,
             updated_at: chrono::Utc::now(),
         };
 
@@ -250,9 +306,9 @@ impl AnimeRepositoryImpl {
             .on_conflict(quality_metrics::anime_id)
             .do_update()
             .set(&metrics_model)
-            .execute(&mut conn)?;
+            .execute(conn)?;
 
-        Ok(())
+        Ok(anime_id)
     }
 }
 
@@ -337,36 +393,26 @@ impl AnimeRepository for AnimeRepositoryImpl {
     }
 
     async fn save(&self, anime: &Anime) -> AppResult<Anime> {
-        use schema::anime as anime_table;
-
         Validator::validate_anime_title(&anime.title)?;
         if let Some(score) = anime.score {
             Validator::validate_score(score)?;
         }
 
         let mut conn = self.db.get_connection()?;
-        let model = self.entity_to_model(anime);
 
-        // Begin transaction
-        conn.transaction::<_, AppError, _>(|conn| {
-            // Insert or update anime
-            diesel::insert_into(anime_table::table)
-                .values(&model)
-                .on_conflict(anime_table::id)
-                .do_update()
-                .set(&model)
-                .execute(conn)?;
+        // Use transaction for atomicity
+        let saved_id =
+            conn.transaction::<_, AppError, _>(|conn| self.save_anime_with_relations(conn, anime))?;
 
-            Ok(())
-        })?;
-
-        // Save related data
-        self.save_anime_genres(&anime.id, &anime.genres).await?;
-        self.save_anime_studios(&anime.id, &anime.studios).await?;
-        self.save_quality_metrics(&anime.id, &anime.quality_metrics)
-            .await?;
-
-        Ok(anime.clone())
+        // Return the saved anime with the correct ID
+        if saved_id != anime.id {
+            // The anime was updated with an existing ID
+            self.find_by_id(&saved_id).await?.ok_or_else(|| {
+                AppError::InternalError("Failed to retrieve saved anime".to_string())
+            })
+        } else {
+            Ok(anime.clone())
+        }
     }
 
     async fn save_batch(&self, anime_list: &[Anime]) -> AppResult<Vec<Anime>> {

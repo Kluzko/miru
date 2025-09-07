@@ -12,8 +12,19 @@ pub struct JikanMapper;
 
 impl JikanMapper {
     pub fn to_domain(dto: JikanAnimeData) -> Anime {
+        // Generate a deterministic UUID based on mal_id if available
+        // This ensures the same anime always gets the same UUID in our system
+        let id = if dto.mal_id > 0 {
+            // Use namespace UUID to generate deterministic IDs
+            let namespace = Uuid::NAMESPACE_OID;
+            Uuid::new_v5(&namespace, format!("mal_anime_{}", dto.mal_id).as_bytes())
+        } else {
+            // Fallback to random UUID for anime without mal_id
+            Uuid::new_v4()
+        };
+
         let mut anime = Anime {
-            id: Uuid::new_v4(),
+            id,
             mal_id: Some(dto.mal_id),
             title: dto.title.clone(),
             title_english: dto.title_english.clone(),
@@ -128,10 +139,22 @@ impl JikanMapper {
     fn map_genres(genres: &[JikanEntity]) -> Vec<Genre> {
         genres
             .iter()
-            .map(|g| Genre {
-                id: Uuid::new_v4(),
-                mal_id: Some(g.mal_id),
-                name: g.name.clone(),
+            .map(|g| {
+                // Generate deterministic UUID for genres based on mal_id
+                let id = if g.mal_id > 0 {
+                    let namespace = Uuid::NAMESPACE_OID;
+                    Uuid::new_v5(&namespace, format!("mal_genre_{}", g.mal_id).as_bytes())
+                } else {
+                    // Use name-based UUID for consistency
+                    let namespace = Uuid::NAMESPACE_OID;
+                    Uuid::new_v5(&namespace, format!("genre_{}", g.name).as_bytes())
+                };
+
+                Genre {
+                    id,
+                    mal_id: Some(g.mal_id),
+                    name: g.name.clone(),
+                }
             })
             .collect()
     }

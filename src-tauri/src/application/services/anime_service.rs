@@ -20,42 +20,70 @@ impl AnimeService {
     }
 
     pub async fn search_anime(&self, query: &str) -> AppResult<Vec<Anime>> {
+        // First, search in local database
         let db_results = self.anime_repo.search(query, 20).await?;
 
-        // If we have results, return them
-        // The user can explicitly "search online" if they want fresh data
-        if !db_results.is_empty() {
+        // If we have sufficient results, return them
+        if db_results.len() >= 5 {
             return Ok(db_results);
         }
 
-        // No local results? Search Jikan and save
+        // Otherwise, search Jikan and merge results
         let jikan_results = self.jikan_client.search_anime(query, 10).await?;
 
         if !jikan_results.is_empty() {
-            // Save to database for next time
-            let _ = self.anime_repo.save_batch(&jikan_results).await;
+            // Save new anime to database (the repository will handle duplicates)
+            for anime in &jikan_results {
+                // The save method will handle duplicates by mal_id
+                let _ = self.anime_repo.save(anime).await;
+            }
+
+            // Search again to get all results (including newly saved ones)
+            return self.anime_repo.search(query, 20).await;
         }
 
-        Ok(jikan_results)
+        Ok(db_results)
     }
 
     pub async fn get_anime_by_id(&self, id: &Uuid) -> AppResult<Option<Anime>> {
-        // Get from database
-        let anime = self.anime_repo.find_by_id(id).await?;
+        self.anime_repo.find_by_id(id).await
+    }
 
-        Ok(anime)
+    pub async fn get_anime_by_mal_id(&self, mal_id: i32) -> AppResult<Option<Anime>> {
+        // First check local database
+        if let Some(anime) = self.anime_repo.find_by_mal_id(mal_id).await? {
+            return Ok(Some(anime));
+        }
+
+        // If not found locally, fetch from Jikan
+        if let Some(anime) = self.jikan_client.get_anime_by_id(mal_id).await? {
+            // Save to database
+            let saved = self.anime_repo.save(&anime).await?;
+            return Ok(Some(saved));
+        }
+
+        Ok(None)
     }
 
     pub async fn get_top_anime(&self, page: i32, limit: i32) -> AppResult<Vec<Anime>> {
-        // Fetch from Jikan
+        // Always fetch fresh data from Jikan for top anime
         let anime_list = self.jikan_client.get_top_anime(page, limit).await?;
 
-        // Save to database
-        if !anime_list.is_empty() {
-            let _ = self.anime_repo.save_batch(&anime_list).await;
+        // Save to database (handling duplicates)
+        let mut saved_anime = Vec::new();
+        for anime in anime_list {
+            match self.anime_repo.save(&anime).await {
+                Ok(saved) => saved_anime.push(saved),
+                Err(e) => {
+                    // Log but don't fail the entire operation
+                    eprintln!("Warning: Failed to save anime {}: {}", anime.title, e);
+                    // Still include the anime in results even if save failed
+                    saved_anime.push(anime);
+                }
+            }
         }
 
-        Ok(anime_list)
+        Ok(saved_anime)
     }
 
     pub async fn get_seasonal_anime(
@@ -70,11 +98,43 @@ impl AnimeService {
             .get_seasonal_anime(year, season, page)
             .await?;
 
-        // Save to database
-        if !anime_list.is_empty() {
-            let _ = self.anime_repo.save_batch(&anime_list).await;
+        // Save to database (handling duplicates)
+        let mut saved_anime = Vec::new();
+        for anime in anime_list {
+            match self.anime_repo.save(&anime).await {
+                Ok(saved) => saved_anime.push(saved),
+                Err(e) => {
+                    // Log but don't fail the entire operation
+                    eprintln!("Warning: Failed to save anime {}: {}", anime.title, e);
+                    // Still include the anime in results even if save failed
+                    saved_anime.push(anime);
+                }
+            }
         }
 
-        Ok(anime_list)
+        Ok(saved_anime)
+    }
+
+    pub async fn update_anime(&self, anime: &Anime) -> AppResult<Anime> {
+        // Recalculate scores before saving
+        let mut updated_anime = anime.clone();
+        updated_anime.update_scores(&self.score_calculator);
+
+        self.anime_repo.update(&updated_anime).await
+    }
+
+    pub async fn delete_anime(&self, id: &Uuid) -> AppResult<()> {
+        self.anime_repo.delete(id).await
+    }
+
+    pub async fn refresh_anime_from_mal(&self, mal_id: i32) -> AppResult<Option<Anime>> {
+        // Fetch fresh data from Jikan
+        if let Some(anime) = self.jikan_client.get_anime_by_id(mal_id).await? {
+            // Save/update in database
+            let saved = self.anime_repo.save(&anime).await?;
+            return Ok(Some(saved));
+        }
+
+        Ok(None)
     }
 }
