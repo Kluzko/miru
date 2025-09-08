@@ -1,4 +1,3 @@
-// src/features/anime/components/anime-detail-sheet.tsx
 import { Star, Calendar, Play, Users, Trophy } from "lucide-react";
 import {
   Sheet,
@@ -36,8 +35,10 @@ export function AnimeDetailSheet({
   const handleAddToCollection = async () => {
     if (collectionId) {
       await addToCollection.mutateAsync({
-        collectionId,
-        animeId: anime.id,
+        collection_id: collectionId,
+        anime_id: anime.id,
+        user_score: null,
+        notes: null,
       });
       onClose();
     }

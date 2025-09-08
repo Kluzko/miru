@@ -9,7 +9,7 @@ use uuid::Uuid;
 #[serde(rename_all = "camelCase")]
 pub struct Anime {
     pub id: Uuid,
-    pub mal_id: Option<i32>,
+    pub mal_id: i32,
     pub title: String,
     pub title_english: Option<String>,
     pub title_japanese: Option<String>,

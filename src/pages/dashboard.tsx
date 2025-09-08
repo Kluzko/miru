@@ -2,20 +2,34 @@ import { TrendingUp, Library, Clock, Star } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CollectionList } from "@/features/collection/components/collection-list";
 import { useCollections } from "@/features/collection/hooks";
-import { useTopAnime } from "@/features/anime/hooks";
-import { AnimeGrid, AnimeGridSkeleton } from "@/features/anime/components";
+
+import { useMemo } from "react";
 
 export function DashboardPage() {
-  const { data: collections = [], isLoading: collectionsLoading } =
-    useCollections();
-  const { data: topAnime = [], isLoading: topAnimeLoading } = useTopAnime();
+  const { data: collections = [] } = useCollections();
 
-  const stats = {
-    totalCollections: collections.length,
-    totalAnime: collections.reduce((acc, c) => acc + c.animeIds.length, 0),
-    recentlyAdded: 0,
-    avgScore: 0,
-  };
+  const stats = useMemo(() => {
+    // Calculate unique anime across all collections
+    const uniqueAnimeIds = new Set<string>();
+    collections.forEach((collection) => {
+      collection.animeIds.forEach((id) => uniqueAnimeIds.add(id));
+    });
+
+    // Get recent collections (created in last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const recentlyAdded = collections
+      .filter((collection) => new Date(collection.createdAt) > thirtyDaysAgo)
+      .reduce((acc, c) => acc + c.animeIds.length, 0);
+
+    return {
+      totalCollections: collections.length,
+      totalAnime: uniqueAnimeIds.size, // Use unique count instead of sum
+      recentlyAdded,
+      avgScore: 0, // TODO: Calculate based on user scores when available
+    };
+  }, [collections]);
 
   return (
     <div className="p-6 space-y-6">
@@ -75,16 +89,6 @@ export function DashboardPage() {
       <div>
         <h2 className="text-xl font-semibold mb-4">Your Collections</h2>
         <CollectionList />
-      </div>
-
-      {/* Top Anime */}
-      <div>
-        <h2 className="text-xl font-semibold mb-4">Top Anime</h2>
-        {topAnimeLoading ? (
-          <AnimeGridSkeleton count={5} />
-        ) : (
-          <AnimeGrid anime={topAnime.slice(0, 5)} />
-        )}
       </div>
     </div>
   );

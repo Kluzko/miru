@@ -277,6 +277,39 @@ impl AnimeRepository for AnimeRepositoryImpl {
         .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))?
     }
 
+    async fn find_by_title_variations(&self, search_title: &str) -> AppResult<Option<Anime>> {
+        let search_title_lower = search_title.to_lowercase();
+        let search_pattern = format!("%{}%", search_title_lower);
+        let db = Arc::clone(&self.db);
+
+        let result = task::spawn_blocking(move || {
+            let mut conn = db.get_connection()?;
+
+            // Search across all title fields using LIKE with case insensitive matching
+            let anime_models: Vec<AnimeModel> = anime::table
+                .filter(
+                    anime::title
+                        .ilike(&search_pattern)
+                        .or(anime::title_english.ilike(&search_pattern))
+                        .or(anime::title_japanese.ilike(&search_pattern)),
+                )
+                .limit(1)
+                .load::<AnimeModel>(&mut conn)?;
+            Ok::<Vec<AnimeModel>, AppError>(anime_models)
+        })
+        .await
+        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))?;
+
+        let anime_models = result?;
+        if anime_models.is_empty() {
+            Ok(None)
+        } else {
+            // Load the first match with full relations
+            let anime_with_relations = self.load_anime_batch_with_relations(anime_models).await?;
+            Ok(anime_with_relations.into_iter().next())
+        }
+    }
+
     async fn get_all(&self, offset: i64, limit: i64) -> AppResult<Vec<Anime>> {
         Validator::validate_pagination(offset, limit)?;
 
@@ -505,7 +538,7 @@ impl AnimeRepositoryImpl {
                         name: g.name.clone(),
                     };
 
-                    let genre_id = if g.mal_id.is_some() {
+                    let genre_id = if g.mal_id > 0 {
                         diesel::insert_into(genres::table)
                             .values(&new_g)
                             .on_conflict(genres::mal_id)

@@ -4,9 +4,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ErrorBoundary } from "@/components/common/error-boundary";
 import { AppLayout } from "@/components/layout/app-layout";
-import { DashboardPage } from "@/pages/dashboard";
-import { SearchPage } from "@/pages/search";
-import { CollectionDetailPage } from "@/pages/collection/[id]";
+import {
+  DashboardPage,
+  SearchPage,
+  CollectionDetailPage,
+  CollectionsPage,
+  SettingsPage,
+  AnimeDetailPage,
+} from "@/pages";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -27,7 +32,10 @@ export default function App() {
             <Route path="/" element={<AppLayout />}>
               <Route index element={<DashboardPage />} />
               <Route path="search" element={<SearchPage />} />
+              <Route path="collections" element={<CollectionsPage />} />
               <Route path="collection/:id" element={<CollectionDetailPage />} />
+              <Route path="anime/:id" element={<AnimeDetailPage />} />
+              <Route path="settings" element={<SettingsPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

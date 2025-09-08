@@ -1,49 +1,45 @@
+// src/features/collections/api.ts
 import { invoke } from "@/lib/tauri";
+import {
+  AddAnimeToCollectionRequest,
+  CreateCollectionRequest,
+  DeleteCollectionRequest,
+  GetCollectionAnimeRequest,
+  GetCollectionRequest,
+  ImportAnimeBatchRequest,
+  ImportFromCsvRequest,
+  UpdateCollectionRequest,
+} from "@/types";
 
 export const collectionApi = {
   // Collection CRUD
-  create: (name: string, description?: string) =>
-    invoke("createCollection", { name, description: description ?? null }),
+  create: (request: CreateCollectionRequest) =>
+    invoke("createCollection", request),
 
-  get: (id: string) => invoke("getCollection", { id }),
+  get: (request: GetCollectionRequest) => invoke("getCollection", request),
 
   getAll: () => invoke("getAllCollections"),
 
-  update: (id: string, updates: { name?: string; description?: string }) =>
-    invoke("updateCollection", {
-      id,
-      name: updates.name ?? null,
-      description: updates.description ?? null,
-    }),
+  update: (request: UpdateCollectionRequest) =>
+    invoke("updateCollection", request),
 
-  delete: (id: string) => invoke("deleteCollection", { id }),
+  delete: (request: DeleteCollectionRequest) =>
+    invoke("deleteCollection", request),
 
   // Anime management
-  getAnime: (collectionId: string) =>
-    invoke("getCollectionAnime", { collection_id: collectionId }),
+  getAnime: (request: GetCollectionAnimeRequest) =>
+    invoke("getCollectionAnime", request),
 
-  addAnime: (
-    collectionId: string,
-    animeId: string,
-    userScore?: number,
-    notes?: string,
-  ) =>
-    invoke("addAnimeToCollection", {
-      collection_id: collectionId,
-      anime_id: animeId,
-      user_score: userScore ?? null,
-      notes: notes ?? null,
-    }),
+  addAnime: (request: AddAnimeToCollectionRequest) =>
+    invoke("addAnimeToCollection", request),
 
-  removeAnime: (collectionId: string, animeId: string) =>
-    invoke("removeAnimeFromCollection", {
-      collection_id: collectionId,
-      anime_id: animeId,
-    }),
+  removeAnime: (request: { collection_id: string; anime_id: string }) =>
+    invoke("removeAnimeFromCollection", request),
 
   // Import
-  importBatch: (titles: string[]) => invoke("importAnimeBatch", { titles }),
+  importBatch: (request: ImportAnimeBatchRequest) =>
+    invoke("importAnimeBatch", request),
 
-  importCsv: (csvContent: string) =>
-    invoke("importFromCsv", { csv_content: csvContent }),
+  importCsv: (request: ImportFromCsvRequest) =>
+    invoke("importFromCsv", request),
 };

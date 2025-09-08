@@ -1,5 +1,7 @@
 use crate::application::services::collection_service::CollectionService;
-use crate::application::services::import_service::{ImportResult, ImportService};
+use crate::application::services::import_service::{
+    ImportResult, ImportService, ValidatedAnime, ValidationResult,
+};
 use crate::domain::entities::{Anime, Collection};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -75,6 +77,16 @@ pub struct ImportFromMalIdsRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct ImportFromCsvRequest {
     pub csv_content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct ValidateAnimeTitlesRequest {
+    pub titles: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct ImportValidatedAnimeRequest {
+    pub validated_anime: Vec<ValidatedAnime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -220,6 +232,31 @@ pub async fn import_from_csv(
 ) -> Result<ImportResult, String> {
     import_service
         .import_from_csv(&request.csv_content)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// New two-phase import commands
+#[tauri::command]
+#[specta::specta]
+pub async fn validate_anime_titles(
+    request: ValidateAnimeTitlesRequest,
+    import_service: State<'_, Arc<ImportService>>,
+) -> Result<ValidationResult, String> {
+    import_service
+        .validate_anime_titles(request.titles)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn import_validated_anime(
+    request: ImportValidatedAnimeRequest,
+    import_service: State<'_, Arc<ImportService>>,
+) -> Result<ImportResult, String> {
+    import_service
+        .import_validated_anime(request.validated_anime)
         .await
         .map_err(|e| e.to_string())
 }

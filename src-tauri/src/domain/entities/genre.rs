@@ -5,7 +5,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Type)]
 pub struct Genre {
     pub id: Uuid,
-    pub mal_id: Option<i32>,
+    pub mal_id: i32,
     pub name: String,
 }
 

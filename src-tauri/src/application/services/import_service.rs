@@ -51,16 +51,15 @@ impl ImportService {
                         let anime = anime_list.into_iter().next().unwrap();
 
                         // Check if already exists by mal_id
-                        if let Some(mal_id) = anime.mal_id {
-                            if let Ok(Some(existing)) = self.anime_repo.find_by_mal_id(mal_id).await
-                            {
-                                skipped.push(SkippedAnime {
-                                    title: existing.title.clone(),
-                                    mal_id: Some(mal_id),
-                                    reason: "Already in database".to_string(),
-                                });
-                                continue;
-                            }
+                        if let Ok(Some(existing)) =
+                            self.anime_repo.find_by_mal_id(anime.mal_id).await
+                        {
+                            skipped.push(SkippedAnime {
+                                title: existing.title.clone(),
+                                mal_id: anime.mal_id,
+                                reason: "Already in database".to_string(),
+                            });
+                            continue;
                         }
 
                         // Try to save
@@ -130,7 +129,7 @@ impl ImportService {
             if let Ok(Some(existing)) = self.anime_repo.find_by_mal_id(*mal_id).await {
                 skipped.push(SkippedAnime {
                     title: existing.title.clone(),
-                    mal_id: Some(*mal_id),
+                    mal_id: *mal_id,
                     reason: "Already in database".to_string(),
                 });
                 continue;
@@ -152,7 +151,7 @@ impl ImportService {
                             if e.to_string().contains("duplicate") {
                                 skipped.push(SkippedAnime {
                                     title: anime.title.clone(),
-                                    mal_id: Some(*mal_id),
+                                    mal_id: *mal_id,
                                     reason: "Duplicate entry".to_string(),
                                 });
                             } else {
@@ -225,6 +224,189 @@ impl ImportService {
             ))
         }
     }
+
+    /// Phase 1: Smart validation with duplicate detection across title variations
+    pub async fn validate_anime_titles(&self, titles: Vec<String>) -> AppResult<ValidationResult> {
+        let mut found = Vec::new();
+        let mut not_found = Vec::new();
+        let mut already_exists = Vec::new();
+        let mut needs_api_check = Vec::new();
+
+        // Phase 1: Check local database first for all title variations
+        for title in titles.iter() {
+            match self.anime_repo.find_by_title_variations(title).await {
+                Ok(Some(existing_anime)) => {
+                    // Determine which field matched
+                    let matched_field = if existing_anime
+                        .title
+                        .to_lowercase()
+                        .replace(" ", "")
+                        .replace(":", "")
+                        .replace("-", "")
+                        == title
+                            .to_lowercase()
+                            .replace(" ", "")
+                            .replace(":", "")
+                            .replace("-", "")
+                    {
+                        "title"
+                    } else if existing_anime.title_english.as_ref().map(|t| {
+                        t.to_lowercase()
+                            .replace(" ", "")
+                            .replace(":", "")
+                            .replace("-", "")
+                    }) == Some(
+                        title
+                            .to_lowercase()
+                            .replace(" ", "")
+                            .replace(":", "")
+                            .replace("-", ""),
+                    ) {
+                        "title_english"
+                    } else if existing_anime.title_japanese.as_ref().map(|t| {
+                        t.to_lowercase()
+                            .replace(" ", "")
+                            .replace(":", "")
+                            .replace("-", "")
+                    }) == Some(
+                        title
+                            .to_lowercase()
+                            .replace(" ", "")
+                            .replace(":", "")
+                            .replace("-", ""),
+                    ) {
+                        "title_japanese"
+                    } else {
+                        "fuzzy_match"
+                    };
+
+                    already_exists.push(ExistingAnime {
+                        input_title: title.clone(),
+                        matched_title: existing_anime.title.clone(),
+                        matched_field: matched_field.to_string(),
+                        anime: existing_anime,
+                    });
+                }
+                Ok(None) => {
+                    needs_api_check.push(title.clone());
+                }
+                Err(e) => {
+                    not_found.push(ImportError {
+                        title: title.clone(),
+                        reason: format!("Database error: {}", e),
+                    });
+                }
+            }
+        }
+
+        // Phase 2: API calls only for titles not in database
+        const BATCH_SIZE: usize = 3;
+        const DELAY_BETWEEN_BATCHES: Duration = Duration::from_millis(1000);
+
+        for chunk in needs_api_check.chunks(BATCH_SIZE) {
+            let mut batch_futures = Vec::new();
+
+            for title in chunk {
+                let title_clone = title.clone();
+                let jikan_client = Arc::clone(&self.jikan_client);
+                batch_futures.push(async move {
+                    (
+                        title_clone.clone(),
+                        jikan_client.search_anime(&title_clone, 1).await,
+                    )
+                });
+            }
+
+            let results = futures::future::join_all(batch_futures).await;
+
+            for (title, result) in results {
+                match result {
+                    Ok(anime_list) if !anime_list.is_empty() => {
+                        let anime = anime_list.into_iter().next().unwrap();
+
+                        // Double-check: Maybe API returned anime we have under different title
+                        match self.anime_repo.find_by_mal_id(anime.mal_id).await {
+                            Ok(Some(existing)) => {
+                                already_exists.push(ExistingAnime {
+                                    input_title: title,
+                                    matched_title: existing.title.clone(),
+                                    matched_field: "mal_id".to_string(),
+                                    anime: existing,
+                                });
+                            }
+                            _ => {
+                                found.push(ValidatedAnime {
+                                    input_title: title,
+                                    anime_data: anime,
+                                });
+                            }
+                        }
+                    }
+                    Ok(_) => {
+                        not_found.push(ImportError {
+                            title,
+                            reason: "No results found on MyAnimeList".to_string(),
+                        });
+                    }
+                    Err(e) => {
+                        not_found.push(ImportError {
+                            title,
+                            reason: format!("Search failed: {}", e),
+                        });
+                    }
+                }
+            }
+
+            // Rate limiting between batches
+            if chunk.len() == BATCH_SIZE && !needs_api_check.is_empty() {
+                sleep(DELAY_BETWEEN_BATCHES).await;
+            }
+        }
+
+        Ok(ValidationResult {
+            found,
+            not_found,
+            already_exists,
+            total: u32::try_from(titles.len()).unwrap_or(u32::MAX),
+        })
+    }
+
+    /// Phase 2: Import only selected anime (no API calls, just save to DB)
+    pub async fn import_validated_anime(
+        &self,
+        validated_anime: Vec<ValidatedAnime>,
+    ) -> AppResult<ImportResult> {
+        let mut imported = Vec::new();
+        let mut failed = Vec::new();
+        let skipped = Vec::new(); // No skips in this phase since we already validated
+
+        let total_count = validated_anime.len();
+
+        for validated in &validated_anime {
+            match self.anime_repo.save(&validated.anime_data).await {
+                Ok(saved_anime) => {
+                    imported.push(ImportedAnime {
+                        title: saved_anime.title.clone(),
+                        mal_id: saved_anime.mal_id,
+                        id: saved_anime.id,
+                    });
+                }
+                Err(e) => {
+                    failed.push(ImportError {
+                        title: validated.input_title.clone(),
+                        reason: format!("Database error: {}", e),
+                    });
+                }
+            }
+        }
+
+        Ok(ImportResult {
+            imported,
+            failed,
+            skipped,
+            total: u32::try_from(total_count).unwrap_or(u32::MAX),
+        })
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Type)]
@@ -238,7 +420,7 @@ pub struct ImportResult {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Type)]
 pub struct ImportedAnime {
     pub title: String,
-    pub mal_id: Option<i32>,
+    pub mal_id: i32,
     pub id: uuid::Uuid,
 }
 
@@ -251,6 +433,29 @@ pub struct ImportError {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Type)]
 pub struct SkippedAnime {
     pub title: String,
-    pub mal_id: Option<i32>,
+    pub mal_id: i32,
     pub reason: String,
+}
+
+// New validation types for two-phase import
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Type)]
+pub struct ValidationResult {
+    pub found: Vec<ValidatedAnime>,
+    pub not_found: Vec<ImportError>,
+    pub already_exists: Vec<ExistingAnime>,
+    pub total: u32,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Type)]
+pub struct ValidatedAnime {
+    pub input_title: String,
+    pub anime_data: crate::domain::entities::Anime,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Type)]
+pub struct ExistingAnime {
+    pub input_title: String,
+    pub matched_title: String,
+    pub matched_field: String, // "title", "title_english", "title_japanese", or "mal_id"
+    pub anime: crate::domain::entities::Anime,
 }

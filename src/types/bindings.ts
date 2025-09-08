@@ -124,6 +124,22 @@ async importFromCsv(request: ImportFromCsvRequest) : Promise<Result<ImportResult
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async validateAnimeTitles(request: ValidateAnimeTitlesRequest) : Promise<Result<ValidationResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("validate_anime_titles", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async importValidatedAnime(request: ImportValidatedAnimeRequest) : Promise<Result<ImportResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("import_validated_anime", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -139,14 +155,15 @@ async importFromCsv(request: ImportFromCsvRequest) : Promise<Result<ImportResult
 
 export type AddAnimeToCollectionRequest = { collection_id: string; anime_id: string; user_score: number | null; notes: string | null }
 export type AiredDates = { from: string | null; to: string | null }
-export type Anime = { id: string; malId: number | null; title: string; titleEnglish: string | null; titleJapanese: string | null; score: number | null; scoredBy: number | null; rank: number | null; popularity: number | null; members: number | null; favorites: number | null; synopsis: string | null; episodes: number | null; status: AnimeStatus; aired: AiredDates; animeType: AnimeType; rating: string | null; genres: Genre[]; studios: string[]; source: string | null; duration: string | null; imageUrl: string | null; malUrl: string | null; compositeScore: number; tier: AnimeTier; qualityMetrics: QualityMetrics }
+export type Anime = { id: string; malId: number; title: string; titleEnglish: string | null; titleJapanese: string | null; score: number | null; scoredBy: number | null; rank: number | null; popularity: number | null; members: number | null; favorites: number | null; synopsis: string | null; episodes: number | null; status: AnimeStatus; aired: AiredDates; animeType: AnimeType; rating: string | null; genres: Genre[]; studios: string[]; source: string | null; duration: string | null; imageUrl: string | null; malUrl: string | null; compositeScore: number; tier: AnimeTier; qualityMetrics: QualityMetrics }
 export type AnimeStatus = "airing" | "finished" | "not_yet_aired" | "unknown"
 export type AnimeTier = { name: string; level: number; color: string }
 export type AnimeType = "TV" | "Movie" | "OVA" | "Special" | "ONA" | "Music" | "Unknown"
 export type Collection = { id: string; name: string; description: string | null; animeIds: string[]; createdAt: string; updatedAt: string }
 export type CreateCollectionRequest = { name: string; description: string | null }
 export type DeleteCollectionRequest = { id: string }
-export type Genre = { id: string; mal_id: number | null; name: string }
+export type ExistingAnime = { input_title: string; matched_title: string; matched_field: string; anime: Anime }
+export type Genre = { id: string; mal_id: number; name: string }
 export type GetAnimeByIdRequest = { id: string }
 export type GetCollectionAnimeRequest = { collection_id: string }
 export type GetCollectionRequest = { id: string }
@@ -156,13 +173,17 @@ export type ImportAnimeBatchRequest = { titles: string[] }
 export type ImportError = { title: string; reason: string }
 export type ImportFromCsvRequest = { csv_content: string }
 export type ImportResult = { imported: ImportedAnime[]; failed: ImportError[]; skipped: SkippedAnime[]; total: number }
-export type ImportedAnime = { title: string; mal_id: number | null; id: string }
+export type ImportValidatedAnimeRequest = { validated_anime: ValidatedAnime[] }
+export type ImportedAnime = { title: string; mal_id: number; id: string }
 export type QualityMetrics = { popularityScore: number; engagementScore: number; consistencyScore: number; audienceReachScore: number }
 export type RemoveAnimeFromCollectionRequest = { collection_id: string; anime_id: string }
 export type SearchAnimeRequest = { query: string }
-export type SkippedAnime = { title: string; mal_id: number | null; reason: string }
+export type SkippedAnime = { title: string; mal_id: number; reason: string }
 export type UpdateAnimeInCollectionRequest = { collection_id: string; anime_id: string; user_score: number | null; notes: string | null }
 export type UpdateCollectionRequest = { id: string; name: string | null; description: string | null }
+export type ValidateAnimeTitlesRequest = { titles: string[] }
+export type ValidatedAnime = { input_title: string; anime_data: Anime }
+export type ValidationResult = { found: ValidatedAnime[]; not_found: ImportError[]; already_exists: ExistingAnime[]; total: number }
 
 /** tauri-specta globals **/
 

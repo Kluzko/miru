@@ -13,7 +13,7 @@ use uuid::Uuid;
 #[diesel(table_name = anime)]
 pub struct AnimeModel {
     pub id: Uuid,
-    pub mal_id: Option<i32>,
+    pub mal_id: i32,
     pub title: String,
     pub title_english: Option<String>,
     pub title_japanese: Option<String>,
@@ -44,7 +44,7 @@ pub struct AnimeModel {
 #[diesel(table_name = anime)]
 pub struct NewAnime {
     pub id: Uuid,
-    pub mal_id: Option<i32>,
+    pub mal_id: i32,
     pub title: String,
     pub title_english: Option<String>,
     pub title_japanese: Option<String>,
@@ -72,7 +72,7 @@ pub struct NewAnime {
 #[derive(AsChangeset, Debug, Clone)]
 #[diesel(table_name = anime)]
 pub struct AnimeChangeset {
-    pub mal_id: Option<i32>,
+    pub mal_id: i32,
     pub title: String,
     pub title_english: Option<String>,
     pub title_japanese: Option<String>,
@@ -103,7 +103,7 @@ pub struct AnimeChangeset {
 #[diesel(table_name = genres)]
 pub struct GenreModel {
     pub id: Uuid,
-    pub mal_id: Option<i32>,
+    pub mal_id: i32,
     pub name: String,
 }
 
@@ -111,7 +111,7 @@ pub struct GenreModel {
 #[diesel(table_name = genres)]
 pub struct NewGenre {
     pub id: Uuid,
-    pub mal_id: Option<i32>,
+    pub mal_id: i32,
     pub name: String,
 }
 

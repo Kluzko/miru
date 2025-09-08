@@ -1,14 +1,22 @@
-// src/pages/collection/[id].tsx
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { AnimeGrid, AnimeDetailSheet } from "@/features/anime/components";
+import {
+  AnimeGrid,
+  AnimeDetailSheet,
+  AnimeTable,
+} from "@/features/anime/components";
 import {
   CollectionHeader,
   ImportDialog,
+  EditCollectionDialog,
+  DeleteCollectionDialog,
 } from "@/features/collection/components";
-import { useCollection, useCollectionAnime } from "@/features/collection/hooks";
+import {
+  useCollection,
+  useCollectionAnime,
+  useRemoveAnimeFromCollection,
+} from "@/features/collection/hooks";
 import { AnimeGridSkeleton } from "@/features/anime/components/anime-skeleton";
 import { EmptyState } from "@/components/common/empty-state";
 import type { Anime } from "@/types";
@@ -19,11 +27,15 @@ export function CollectionDetailPage() {
   const navigate = useNavigate();
   const [selectedAnime, setSelectedAnime] = useState<Anime | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"grid" | "table">("table");
 
   const { data: collection, isLoading: collectionLoading } = useCollection(id!);
   const { data: animeList = [], isLoading: animeLoading } = useCollectionAnime(
     id!,
   );
+  const removeAnime = useRemoveAnimeFromCollection();
 
   if (collectionLoading || !collection) {
     return <CollectionDetailSkeleton />;
@@ -31,24 +43,20 @@ export function CollectionDetailPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="px-6 py-4">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => navigate(-1)}
-          className="mb-4"
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back
-        </Button>
-      </div>
-
       <CollectionHeader
         collection={collection}
         onImport={() => setImportOpen(true)}
+        onEdit={() => setEditOpen(true)}
+        onDelete={() => setDeleteOpen(true)}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
       />
 
-      <div className="flex-1 overflow-auto p-6">
+      <div
+        className={
+          viewMode === "table" ? "flex-1 p-6" : "flex-1 overflow-auto p-6"
+        }
+      >
         {animeLoading ? (
           <AnimeGridSkeleton />
         ) : animeList.length === 0 ? (
@@ -59,21 +67,64 @@ export function CollectionDetailPage() {
               <Button onClick={() => setImportOpen(true)}>Import Anime</Button>
             }
           />
+        ) : viewMode === "table" ? (
+          <AnimeTable
+            animes={animeList}
+            onRemoveAnime={async (animeId) => {
+              try {
+                await removeAnime.mutateAsync({
+                  collection_id: id!,
+                  anime_id: animeId,
+                });
+              } catch (error) {
+                console.error("Failed to remove anime from collection:", error);
+              }
+            }}
+          />
         ) : (
-          <AnimeGrid anime={animeList} onAnimeClick={setSelectedAnime} />
+          <AnimeGrid
+            anime={animeList}
+            onAnimeClick={(anime) => {
+              // Grid view can handle its own drawer/sheet
+              setSelectedAnime(anime);
+            }}
+          />
         )}
       </div>
 
-      <AnimeDetailSheet
-        anime={selectedAnime}
-        isOpen={!!selectedAnime}
-        onClose={() => setSelectedAnime(null)}
-      />
+      {/* AnimeDetailSheet only for grid view */}
+      {viewMode === "grid" && (
+        <AnimeDetailSheet
+          anime={selectedAnime}
+          isOpen={!!selectedAnime}
+          onClose={() => setSelectedAnime(null)}
+        />
+      )}
 
       <ImportDialog
         isOpen={importOpen}
         onClose={() => setImportOpen(false)}
-        collectionId={id!}
+        collectionId={id}
+        onAnimesImported={(animeIds) => {
+          console.log("Imported anime IDs:", animeIds);
+          // The collection anime list will automatically refresh via query invalidation
+        }}
+      />
+
+      <EditCollectionDialog
+        isOpen={editOpen}
+        onClose={() => setEditOpen(false)}
+        collection={collection}
+      />
+
+      <DeleteCollectionDialog
+        isOpen={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        collection={collection}
+        onDeleted={() => {
+          // Navigate back to collections list after deletion
+          navigate("/collections");
+        }}
       />
     </div>
   );

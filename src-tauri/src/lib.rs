@@ -46,6 +46,8 @@ pub fn run() {
         // Import commands
         import_anime_batch,
         import_from_csv,
+        validate_anime_titles,
+        import_validated_anime,
     ]);
 
     // 2) Export bindings in debug builds

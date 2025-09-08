@@ -25,7 +25,7 @@ impl JikanMapper {
 
         let mut anime = Anime {
             id,
-            mal_id: Some(dto.mal_id),
+            mal_id: dto.mal_id,
             title: dto.title.clone(),
             title_english: dto.title_english.clone(),
             title_japanese: dto.title_japanese.clone(),
@@ -152,7 +152,7 @@ impl JikanMapper {
 
                 Genre {
                     id,
-                    mal_id: Some(g.mal_id),
+                    mal_id: g.mal_id,
                     name: g.name.clone(),
                 }
             })

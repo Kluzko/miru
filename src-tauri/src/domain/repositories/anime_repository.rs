@@ -13,4 +13,5 @@ pub trait AnimeRepository: Send + Sync {
     async fn update(&self, anime: &Anime) -> AppResult<Anime>;
     async fn delete(&self, id: &Uuid) -> AppResult<()>;
     async fn get_all(&self, offset: i64, limit: i64) -> AppResult<Vec<Anime>>;
+    async fn find_by_title_variations(&self, search_title: &str) -> AppResult<Option<Anime>>;
 }

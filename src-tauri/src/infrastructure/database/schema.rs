@@ -3,7 +3,7 @@
 diesel::table! {
     anime (id) {
         id -> Uuid,
-        mal_id -> Nullable<Int4>,
+        mal_id -> Int4,
         #[max_length = 255]
         title -> Varchar,
         #[max_length = 255]
@@ -76,7 +76,7 @@ diesel::table! {
 diesel::table! {
     genres (id) {
         id -> Uuid,
-        mal_id -> Nullable<Int4>,
+        mal_id -> Int4,
         #[max_length = 100]
         name -> Varchar,
     }
