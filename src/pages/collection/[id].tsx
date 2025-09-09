@@ -105,7 +105,7 @@ export function CollectionDetailPage() {
         isOpen={importOpen}
         onClose={() => setImportOpen(false)}
         collectionId={id}
-        onAnimesImported={(animeIds) => {
+        onAnimesImported={(animeIds: number[]) => {
           console.log("Imported anime IDs:", animeIds);
           // The collection anime list will automatically refresh via query invalidation
         }}
