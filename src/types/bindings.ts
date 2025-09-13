@@ -5,7 +5,7 @@
 
 
 export const commands = {
-async searchAnime(request: SearchAnimeRequest) : Promise<Result<Anime[], string>> {
+async searchAnime(request: SearchAnimeRequest) : Promise<Result<AnimeDetailed[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("search_anime", { request }) };
 } catch (e) {
@@ -13,7 +13,7 @@ async searchAnime(request: SearchAnimeRequest) : Promise<Result<Anime[], string>
     else return { status: "error", error: e  as any };
 }
 },
-async getAnimeById(request: GetAnimeByIdRequest) : Promise<Result<Anime | null, string>> {
+async getAnimeById(request: GetAnimeByIdRequest) : Promise<Result<AnimeDetailed | null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_anime_by_id", { request }) };
 } catch (e) {
@@ -21,7 +21,7 @@ async getAnimeById(request: GetAnimeByIdRequest) : Promise<Result<Anime | null, 
     else return { status: "error", error: e  as any };
 }
 },
-async getTopAnime(request: GetTopAnimeRequest) : Promise<Result<Anime[], string>> {
+async getTopAnime(request: GetTopAnimeRequest) : Promise<Result<AnimeDetailed[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_top_anime", { request }) };
 } catch (e) {
@@ -29,7 +29,7 @@ async getTopAnime(request: GetTopAnimeRequest) : Promise<Result<Anime[], string>
     else return { status: "error", error: e  as any };
 }
 },
-async getSeasonalAnime(request: GetSeasonalAnimeRequest) : Promise<Result<Anime[], string>> {
+async getSeasonalAnime(request: GetSeasonalAnimeRequest) : Promise<Result<AnimeDetailed[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_seasonal_anime", { request }) };
 } catch (e) {
@@ -93,7 +93,7 @@ async removeAnimeFromCollection(request: RemoveAnimeFromCollectionRequest) : Pro
     else return { status: "error", error: e  as any };
 }
 },
-async getCollectionAnime(request: GetCollectionAnimeRequest) : Promise<Result<Anime[], string>> {
+async getCollectionAnime(request: GetCollectionAnimeRequest) : Promise<Result<AnimeDetailed[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_collection_anime", { request }) };
 } catch (e) {
@@ -140,6 +140,72 @@ async importValidatedAnime(request: ImportValidatedAnimeRequest) : Promise<Resul
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Get list of all providers with their status
+ */
+async listProviders() : Promise<Result<ProvidersListResponse, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_providers") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Set the primary provider
+ */
+async setPrimaryProvider(request: SetPrimaryProviderRequest) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_primary_provider", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get the current primary provider
+ */
+async getPrimaryProvider() : Promise<Result<AnimeProvider, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_primary_provider") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get enabled providers
+ */
+async getEnabledProviders() : Promise<Result<AnimeProvider[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_enabled_providers") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get rate limit info for a specific provider
+ */
+async getProviderRateLimit(request: GetProviderRateLimitRequest) : Promise<Result<RateLimiterInfo | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_provider_rate_limit", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get all age restrictions with display names for frontend
+ */
+async getAgeRestrictions() : Promise<Result<AgeRestrictionInfo[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_age_restrictions") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -154,19 +220,98 @@ async importValidatedAnime(request: ImportValidatedAnimeRequest) : Promise<Resul
 /** user-defined types **/
 
 export type AddAnimeToCollectionRequest = { collection_id: string; anime_id: string; user_score: number | null; notes: string | null }
+/**
+ * Age restriction information for frontend display
+ */
+export type AgeRestrictionInfo = { 
+/**
+ * The enum variant name
+ */
+variant: string; 
+/**
+ * User-friendly display name
+ */
+display_name: string; 
+/**
+ * Description for UI
+ */
+description: string; 
+/**
+ * Minimum age
+ */
+min_age: number }
+/**
+ * Air date range for anime
+ */
 export type AiredDates = { from: string | null; to: string | null }
-export type Anime = { id: string; malId: number; title: string; titleEnglish: string | null; titleJapanese: string | null; score: number | null; scoredBy: number | null; rank: number | null; popularity: number | null; members: number | null; favorites: number | null; synopsis: string | null; episodes: number | null; status: AnimeStatus; aired: AiredDates; animeType: AnimeType; rating: string | null; genres: Genre[]; studios: string[]; source: string | null; duration: string | null; imageUrl: string | null; malUrl: string | null; compositeScore: number; tier: AnimeTier; qualityMetrics: QualityMetrics }
-export type AnimeStatus = "airing" | "finished" | "not_yet_aired" | "unknown"
-export type AnimeTier = { name: string; level: number; color: string }
+/**
+ * Comprehensive anime entity with full information for detailed views
+ */
+export type AnimeDetailed = { id: string; title: AnimeTitle; providerMetadata: ProviderMetadata; score: number | null; scoredBy: number | null; rank: number | null; popularity: number | null; members: number | null; favorites: number | null; synopsis: string | null; episodes: number | null; status: AnimeStatus; aired: AiredDates; animeType: AnimeType; ageRestriction: string | null; genres: Genre[]; studios: string[]; source: string | null; duration: string | null; imageUrl: string | null; bannerImage: string | null; trailerUrl: string | null; compositeScore: number; tier: AnimeTier; qualityMetrics: QualityMetrics; createdAt: string; updatedAt: string }
+/**
+ * Supported anime data providers
+ */
+export type AnimeProvider = 
+/**
+ * Jikan (MyAnimeList API) - Default provider
+ */
+"jikan" | 
+/**
+ * AniList GraphQL API
+ */
+"anilist" | 
+/**
+ * Kitsu API
+ */
+"kitsu" | 
+/**
+ * TMDB for anime movies
+ */
+"tmdb" | 
+/**
+ * AniDB for detailed technical info
+ */
+"anidb"
+export type AnimeStatus = "Airing" | "Finished" | "NotYetAired" | "Cancelled" | "Unknown"
+export type AnimeTier = "S" | "A" | "B" | "C" | "D"
+/**
+ * Anime title information with multiple language variants
+ */
+export type AnimeTitle = { 
+/**
+ * Main title (usually from the primary provider)
+ */
+main: string; 
+/**
+ * English title
+ */
+english: string | null; 
+/**
+ * Japanese title (in Japanese characters)
+ */
+japanese: string | null; 
+/**
+ * Romanized Japanese title
+ */
+romaji: string | null; 
+/**
+ * Native language title (could be different from Japanese for non-JP anime)
+ */
+native: string | null; 
+/**
+ * Alternative titles and synonyms
+ */
+synonyms: string[] }
 export type AnimeType = "TV" | "Movie" | "OVA" | "Special" | "ONA" | "Music" | "Unknown"
 export type Collection = { id: string; name: string; description: string | null; animeIds: string[]; createdAt: string; updatedAt: string }
 export type CreateCollectionRequest = { name: string; description: string | null }
 export type DeleteCollectionRequest = { id: string }
-export type ExistingAnime = { input_title: string; matched_title: string; matched_field: string; anime: Anime }
-export type Genre = { id: string; mal_id: number; name: string }
+export type ExistingAnime = { input_title: string; matched_title: string; matched_field: string; anime: AnimeDetailed }
+export type Genre = { id: string; name: string }
 export type GetAnimeByIdRequest = { id: string }
 export type GetCollectionAnimeRequest = { collection_id: string }
 export type GetCollectionRequest = { id: string }
+export type GetProviderRateLimitRequest = { provider: AnimeProvider }
 export type GetSeasonalAnimeRequest = { year: number; season: string; page: number }
 export type GetTopAnimeRequest = { page: number; limit: number }
 export type ImportAnimeBatchRequest = { titles: string[] }
@@ -174,15 +319,54 @@ export type ImportError = { title: string; reason: string }
 export type ImportFromCsvRequest = { csv_content: string }
 export type ImportResult = { imported: ImportedAnime[]; failed: ImportError[]; skipped: SkippedAnime[]; total: number }
 export type ImportValidatedAnimeRequest = { validated_anime: ValidatedAnime[] }
-export type ImportedAnime = { title: string; mal_id: number; id: string }
+export type ImportedAnime = { title: string; primary_external_id: string; provider: AnimeProvider; id: string }
+/**
+ * Provider-specific metadata for external IDs and synchronization
+ */
+export type ProviderMetadata = { 
+/**
+ * External IDs from different providers
+ */
+external_ids: Partial<{ [key in AnimeProvider]: string }>; 
+/**
+ * URLs to provider pages
+ */
+provider_urls: Partial<{ [key in AnimeProvider]: string }>; 
+/**
+ * User's preferred provider for primary data
+ */
+user_preferred_provider: AnimeProvider | null; 
+/**
+ * Current primary provider (can be different from user preference if not available)
+ */
+primary_provider: AnimeProvider }
+export type ProviderStatus = { provider: AnimeProvider; is_primary: boolean; enabled: boolean; rate_limit_info: RateLimiterInfo | null }
+export type ProvidersListResponse = { providers: ProviderStatus[]; primary_provider: AnimeProvider }
 export type QualityMetrics = { popularityScore: number; engagementScore: number; consistencyScore: number; audienceReachScore: number }
+/**
+ * Rate limiter information from the actual client implementation
+ */
+export type RateLimiterInfo = { 
+/**
+ * Requests per second
+ */
+requests_per_second: number; 
+/**
+ * Requests per minute (derived)
+ */
+requests_per_minute: number; 
+/**
+ * Minimum delay between requests (in milliseconds)
+ */
+min_delay_ms: number }
 export type RemoveAnimeFromCollectionRequest = { collection_id: string; anime_id: string }
 export type SearchAnimeRequest = { query: string }
-export type SkippedAnime = { title: string; mal_id: number; reason: string }
+export type SetPrimaryProviderRequest = { provider: AnimeProvider }
+export type SkippedAnime = { title: string; external_id: string; provider: AnimeProvider; reason: string }
 export type UpdateAnimeInCollectionRequest = { collection_id: string; anime_id: string; user_score: number | null; notes: string | null }
 export type UpdateCollectionRequest = { id: string; name: string | null; description: string | null }
 export type ValidateAnimeTitlesRequest = { titles: string[] }
-export type ValidatedAnime = { input_title: string; anime_data: Anime }
+export type ValidatedAnime = { input_title: string; anime_data: AnimeDetailed }
 export type ValidationResult = { found: ValidatedAnime[]; not_found: ImportError[]; already_exists: ExistingAnime[]; total: number }
 
 /** tauri-specta globals **/

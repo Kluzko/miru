@@ -4,8 +4,10 @@ import type { SortBy, SortOrder, GroupBy } from "./use-anime-filters";
 
 interface ProcessingOptions {
   searchTerm: string;
-  genreFilter: string;
-  yearFilter: string;
+  genreFilter: string; // Keep for backward compatibility
+  genreFilters?: string[]; // New multi-select support
+  yearFilter: string; // Keep for backward compatibility
+  yearRange?: [number, number]; // New range support
   statusFilter: string;
   typeFilter: string;
   sortBy: SortBy;
@@ -13,7 +15,10 @@ interface ProcessingOptions {
   groupBy: GroupBy;
 }
 
-export function useAnimeProcessing(animes: Anime[], options: ProcessingOptions) {
+export function useAnimeProcessing(
+  animes: Anime[],
+  options: ProcessingOptions,
+) {
   const filteredAndSortedAnimes = useMemo(() => {
     const {
       searchTerm,
@@ -30,36 +35,63 @@ export function useAnimeProcessing(animes: Anime[], options: ProcessingOptions) 
       // Search filter
       if (searchTerm) {
         const searchLower = searchTerm.toLowerCase();
-        const titleMatch = anime.title.toLowerCase().includes(searchLower);
+        const titleMatch = anime.title.main.toLowerCase().includes(searchLower);
         const genreMatch = anime.genres.some((genre) =>
-          genre.name.toLowerCase().includes(searchLower)
+          genre.name.toLowerCase().includes(searchLower),
         );
         const studioMatch = anime.studios.some((studio) =>
-          studio.toLowerCase().includes(searchLower)
+          studio.toLowerCase().includes(searchLower),
         );
-        const synopsisMatch = anime.synopsis?.toLowerCase().includes(searchLower);
+        const synopsisMatch = anime.synopsis
+          ?.toLowerCase()
+          .includes(searchLower);
 
         if (!(titleMatch || genreMatch || studioMatch || synopsisMatch)) {
           return false;
         }
       }
 
-      // Genre filter
-      const matchesGenre =
-        genreFilter === "all" ||
-        anime.genres.some((genre) => genre.name === genreFilter);
+      // Genre filter - support both single and multiple genres
+      const matchesGenre = (() => {
+        // If genreFilters array is provided and not empty, use multi-select logic
+        if (options.genreFilters && options.genreFilters.length > 0) {
+          return anime.genres.some((genre) =>
+            options.genreFilters!.includes(genre.name),
+          );
+        }
+        // Fallback to single genre filter
+        return (
+          genreFilter === "all" ||
+          anime.genres.some((genre) => genre.name === genreFilter)
+        );
+      })();
 
-      // Year filter
-      const animeYear = anime.aired.from
-        ? new Date(anime.aired.from).getFullYear().toString()
-        : null;
-      const matchesYear = yearFilter === "all" || animeYear === yearFilter;
+      // Year filter - support both single year and range
+      const matchesYear = (() => {
+        if (options.yearRange) {
+          const animeYear = anime.aired.from
+            ? new Date(anime.aired.from).getFullYear()
+            : null;
+          if (!animeYear) return false;
+          return (
+            animeYear >= options.yearRange[0] &&
+            animeYear <= options.yearRange[1]
+          );
+        }
+        // Fallback to single year filter
+        const animeYear = anime.aired.from
+          ? new Date(anime.aired.from).getFullYear().toString()
+          : null;
+        return yearFilter === "all" || animeYear === yearFilter;
+      })();
 
       // Status filter
-      const matchesStatus = statusFilter === "all" || anime.status === statusFilter;
+      const matchesStatus =
+        statusFilter === "all" || anime.status === statusFilter;
 
       // Type filter
-      const matchesType = typeFilter === "all" || anime.animeType === typeFilter;
+      const matchesType =
+        typeFilter === "all" || anime.animeType === typeFilter;
 
       return matchesGenre && matchesYear && matchesStatus && matchesType;
     });
@@ -69,8 +101,8 @@ export function useAnimeProcessing(animes: Anime[], options: ProcessingOptions) 
       // If searching, prioritize relevance
       const searchLower = searchTerm.toLowerCase();
       filtered.sort((a, b) => {
-        const aTitle = a.title.toLowerCase();
-        const bTitle = b.title.toLowerCase();
+        const aTitle = a.title.main.toLowerCase();
+        const bTitle = b.title.main.toLowerCase();
 
         // Exact match first
         if (aTitle === searchLower && bTitle !== searchLower) return -1;
@@ -107,8 +139,8 @@ export function useAnimeProcessing(animes: Anime[], options: ProcessingOptions) 
             bValue = b.aired.from ? new Date(b.aired.from).getFullYear() : 0;
             break;
           case "title":
-            aValue = a.title.toLowerCase();
-            bValue = b.title.toLowerCase();
+            aValue = a.title.main.toLowerCase();
+            bValue = b.title.main.toLowerCase();
             break;
           case "popularity":
             aValue = a.popularity || 999999;
@@ -149,7 +181,7 @@ export function useAnimeProcessing(animes: Anime[], options: ProcessingOptions) 
 
       switch (options.groupBy) {
         case "letter":
-          groupKey = anime.title[0].toUpperCase();
+          groupKey = anime.title.main[0].toUpperCase();
           break;
         case "year":
           const year = anime.aired.from

@@ -33,6 +33,9 @@ pub enum AppError {
 
     #[error("External service error: {0}")]
     ExternalServiceError(String),
+
+    #[error("Not implemented: {0}")]
+    NotImplemented(String),
 }
 
 impl From<diesel::result::Error> for AppError {
@@ -49,6 +52,12 @@ impl From<diesel::result::Error> for AppError {
 impl From<diesel::r2d2::PoolError> for AppError {
     fn from(err: diesel::r2d2::PoolError) -> Self {
         AppError::DatabaseError(format!("Database pool error: {}", err))
+    }
+}
+
+impl From<tokio::task::JoinError> for AppError {
+    fn from(err: tokio::task::JoinError) -> Self {
+        AppError::InternalError(format!("Task join error: {}", err))
     }
 }
 
@@ -111,9 +120,10 @@ impl From<std::env::VarError> for AppError {
 
 // Convert AppError to a format suitable for Tauri commands
 impl AppError {
-    pub fn to_string(&self) -> String {
-        format!("{}", self)
-    }
+    // Note: Use the Display implementation instead (format!("{}", self))
+    // pub fn to_string(&self) -> String {
+    //     format!("{}", self)
+    // }
 }
 
 // Result type alias for convenience

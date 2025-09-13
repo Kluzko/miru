@@ -1,3 +1,4 @@
+use crate::domain::traits::anime_provider_client::RateLimiterInfo;
 use crate::shared::errors::AppError;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -7,6 +8,7 @@ use tokio::time::sleep;
 pub struct RateLimiter {
     last_request: Arc<Mutex<Instant>>,
     min_interval: Duration,
+    requests_per_second: f64,
 }
 
 impl RateLimiter {
@@ -15,6 +17,7 @@ impl RateLimiter {
         Self {
             last_request: Arc::new(Mutex::new(Instant::now() - min_interval)),
             min_interval,
+            requests_per_second,
         }
     }
 
@@ -30,5 +33,10 @@ impl RateLimiter {
 
         *last = Instant::now();
         Ok(())
+    }
+
+    /// Get rate limiter configuration info (single source of truth)
+    pub fn get_info(&self) -> RateLimiterInfo {
+        RateLimiterInfo::new(self.requests_per_second)
     }
 }

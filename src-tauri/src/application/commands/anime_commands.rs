@@ -1,5 +1,5 @@
 use crate::application::services::anime_service::AnimeService;
-use crate::domain::entities::Anime;
+use crate::domain::entities::AnimeDetailed;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Arc;
@@ -17,13 +17,8 @@ pub struct GetAnimeByIdRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-pub struct GetAnimeByMalIdRequest {
-    pub mal_id: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct UpdateAnimeRequest {
-    pub anime: Anime,
+    pub anime: AnimeDetailed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -59,7 +54,7 @@ pub struct GetRecommendationsRequest {
 pub async fn search_anime(
     request: SearchAnimeRequest,
     anime_service: State<'_, Arc<AnimeService>>,
-) -> Result<Vec<Anime>, String> {
+) -> Result<Vec<AnimeDetailed>, String> {
     anime_service
         .search_anime(&request.query)
         .await
@@ -71,7 +66,7 @@ pub async fn search_anime(
 pub async fn get_anime_by_id(
     request: GetAnimeByIdRequest,
     anime_service: State<'_, Arc<AnimeService>>,
-) -> Result<Option<Anime>, String> {
+) -> Result<Option<AnimeDetailed>, String> {
     anime_service
         .get_anime_by_id(&request.id)
         .await
@@ -83,9 +78,9 @@ pub async fn get_anime_by_id(
 pub async fn get_top_anime(
     request: GetTopAnimeRequest,
     anime_service: State<'_, Arc<AnimeService>>,
-) -> Result<Vec<Anime>, String> {
+) -> Result<Vec<AnimeDetailed>, String> {
     anime_service
-        .get_top_anime(request.page, request.limit)
+        .get_top_anime(request.limit as usize)
         .await
         .map_err(|e| e.to_string())
 }
@@ -95,9 +90,9 @@ pub async fn get_top_anime(
 pub async fn get_seasonal_anime(
     request: GetSeasonalAnimeRequest,
     anime_service: State<'_, Arc<AnimeService>>,
-) -> Result<Vec<Anime>, String> {
+) -> Result<Vec<AnimeDetailed>, String> {
     anime_service
-        .get_seasonal_anime(request.year, &request.season, request.page)
+        .get_seasonal_anime(request.year, &request.season, request.page as usize)
         .await
         .map_err(|e| e.to_string())
 }

@@ -1,5 +1,5 @@
 use crate::domain::{
-    entities::{Anime, Collection},
+    entities::{AnimeDetailed, Collection},
     repositories::{AnimeRepository, CollectionRepository},
 };
 use crate::shared::errors::{AppError, AppResult};
@@ -39,7 +39,7 @@ impl CollectionService {
         }
 
         // Create collection
-        let mut collection = Collection::new(name.clone());
+        let mut collection = Collection::new(name);
         if let Some(desc) = description {
             collection = collection.with_description(desc);
         }
@@ -105,7 +105,7 @@ impl CollectionService {
 
     pub async fn delete_collection(&self, id: &Uuid) -> AppResult<()> {
         // Check if collection exists
-        let collection =
+        let _collection =
             self.collection_repo.find_by_id(id).await?.ok_or_else(|| {
                 AppError::NotFound(format!("Collection with ID {} not found", id))
             })?;
@@ -123,6 +123,11 @@ impl CollectionService {
         user_score: Option<f32>,
         notes: Option<String>,
     ) -> AppResult<()> {
+        println!(
+            "DEBUG: Adding anime {} to collection {} (score: {:?}, notes: {:?})",
+            anime_id, collection_id, user_score, notes
+        );
+
         // Validate score if provided
         if let Some(score) = user_score {
             crate::shared::utils::Validator::validate_score(score)?;
@@ -152,14 +157,20 @@ impl CollectionService {
         }
 
         // Add to collection
+        println!("DEBUG: Calling repository to add anime to collection");
         self.collection_repo
             .add_anime_to_collection(collection_id, anime_id, user_score, notes)
             .await?;
 
         // Update collection anime_ids
+        println!("DEBUG: Updating collection anime_ids list");
         collection.add_anime(*anime_id);
         let _ = self.collection_repo.update(&collection).await;
 
+        println!(
+            "DEBUG: Successfully added anime {} to collection {}",
+            anime_id, collection_id
+        );
         Ok(())
     }
 
@@ -196,7 +207,10 @@ impl CollectionService {
         Ok(())
     }
 
-    pub async fn get_collection_anime(&self, collection_id: &Uuid) -> AppResult<Vec<Anime>> {
+    pub async fn get_collection_anime(
+        &self,
+        collection_id: &Uuid,
+    ) -> AppResult<Vec<AnimeDetailed>> {
         // Check if collection exists
         let _ = self
             .collection_repo
@@ -252,5 +266,5 @@ pub struct CollectionStats {
     pub average_score: f32,
     pub genre_distribution: std::collections::HashMap<String, i32>,
     pub status_distribution: std::collections::HashMap<String, i32>,
-    pub top_rated: Vec<Anime>,
+    pub top_rated: Vec<AnimeDetailed>,
 }

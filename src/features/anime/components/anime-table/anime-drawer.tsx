@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { hasEnglishTitle } from "@/lib/anime-utils";
 import {
   Star,
   Calendar,
@@ -123,20 +124,21 @@ export function AnimeDrawer({
         <SheetHeader className="pb-4 border-b border-border/30">
           <div className="space-y-3">
             <SheetTitle className="text-xl font-bold leading-tight text-balance">
-              {anime.title}
+              {anime.title.main}
             </SheetTitle>
 
             {/* English/Japanese titles */}
-            {(anime.titleEnglish || anime.titleJapanese) && (
+            {(hasEnglishTitle(anime.title) ||
+              anime.title.japanese !== null) && (
               <div className="space-y-1">
-                {anime.titleEnglish && anime.titleEnglish !== anime.title && (
+                {hasEnglishTitle(anime.title) && (
                   <p className="text-sm text-muted-foreground">
-                    English: {anime.titleEnglish}
+                    English: {anime.title.english || anime.title.main}
                   </p>
                 )}
-                {anime.titleJapanese && (
+                {anime.title.japanese !== null && (
                   <p className="text-sm text-muted-foreground">
-                    Japanese: {anime.titleJapanese}
+                    Japanese: {anime.title.japanese}
                   </p>
                 )}
               </div>
@@ -285,10 +287,10 @@ export function AnimeDrawer({
                   <div className="font-medium">{anime.duration}</div>
                 </div>
               )}
-              {anime.rating && (
+              {anime.ageRestriction && (
                 <div className="p-2 bg-muted/40 rounded border border-border/30">
-                  <span className="text-muted-foreground">Rating:</span>
-                  <div className="font-medium">{anime.rating}</div>
+                  <span className="text-muted-foreground">Age Rating:</span>
+                  <div className="font-medium">{anime.ageRestriction}</div>
                 </div>
               )}
               <div className="p-2 bg-muted/40 rounded border border-border/30">

@@ -2,7 +2,7 @@ use crate::application::services::collection_service::CollectionService;
 use crate::application::services::import_service::{
     ImportResult, ImportService, ValidatedAnime, ValidationResult,
 };
-use crate::domain::entities::{Anime, Collection};
+use crate::domain::entities::{AnimeDetailed, Collection};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Arc;
@@ -67,11 +67,6 @@ pub struct GetCollectionStatisticsRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct ImportAnimeBatchRequest {
     pub titles: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-pub struct ImportFromMalIdsRequest {
-    pub mal_ids: Vec<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -160,7 +155,12 @@ pub async fn add_anime_to_collection(
     request: AddAnimeToCollectionRequest,
     collection_service: State<'_, Arc<CollectionService>>,
 ) -> Result<(), String> {
-    collection_service
+    println!(
+        "DEBUG: add_anime_to_collection command called - collection: {}, anime: {}",
+        request.collection_id, request.anime_id
+    );
+
+    let result = collection_service
         .add_anime_to_collection(
             &request.collection_id,
             &request.anime_id,
@@ -168,7 +168,21 @@ pub async fn add_anime_to_collection(
             request.notes,
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+
+    match &result {
+        Ok(_) => {
+            println!(
+                "DEBUG: Successfully added anime {} to collection {}",
+                request.anime_id, request.collection_id
+            );
+        }
+        Err(e) => {
+            println!("DEBUG: Failed to add anime to collection: {}", e);
+        }
+    }
+
+    result
 }
 
 #[tauri::command]
@@ -188,7 +202,7 @@ pub async fn remove_anime_from_collection(
 pub async fn get_collection_anime(
     request: GetCollectionAnimeRequest,
     collection_service: State<'_, Arc<CollectionService>>,
-) -> Result<Vec<Anime>, String> {
+) -> Result<Vec<AnimeDetailed>, String> {
     collection_service
         .get_collection_anime(&request.collection_id)
         .await
@@ -217,9 +231,10 @@ pub async fn update_anime_in_collection(
 pub async fn import_anime_batch(
     request: ImportAnimeBatchRequest,
     import_service: State<'_, Arc<ImportService>>,
+    app_handle: tauri::AppHandle,
 ) -> Result<ImportResult, String> {
     import_service
-        .import_anime_batch(request.titles)
+        .import_anime_batch_with_progress(request.titles, Some(app_handle))
         .await
         .map_err(|e| e.to_string())
 }
@@ -229,9 +244,31 @@ pub async fn import_anime_batch(
 pub async fn import_from_csv(
     request: ImportFromCsvRequest,
     import_service: State<'_, Arc<ImportService>>,
+    app_handle: tauri::AppHandle,
 ) -> Result<ImportResult, String> {
+    // Parse CSV first to get titles
+    let mut reader = csv::Reader::from_reader(request.csv_content.as_bytes());
+    let mut titles = Vec::new();
+
+    for result in reader.records() {
+        match result {
+            Ok(record) => {
+                if let Some(first_field) = record.get(0) {
+                    if !first_field.trim().is_empty() {
+                        titles.push(first_field.trim().to_string());
+                    }
+                }
+            }
+            Err(_) => continue,
+        }
+    }
+
+    if titles.is_empty() {
+        return Err("No valid data found in CSV".to_string());
+    }
+
     import_service
-        .import_from_csv(&request.csv_content)
+        .import_anime_batch_with_progress(titles, Some(app_handle))
         .await
         .map_err(|e| e.to_string())
 }
@@ -255,8 +292,28 @@ pub async fn import_validated_anime(
     request: ImportValidatedAnimeRequest,
     import_service: State<'_, Arc<ImportService>>,
 ) -> Result<ImportResult, String> {
-    import_service
+    println!(
+        "DEBUG: import_validated_anime command called with {} anime",
+        request.validated_anime.len()
+    );
+    let result = import_service
         .import_validated_anime(request.validated_anime)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+
+    match &result {
+        Ok(import_result) => {
+            println!(
+                "DEBUG: Import completed - imported: {}, failed: {}, skipped: {}",
+                import_result.imported.len(),
+                import_result.failed.len(),
+                import_result.skipped.len()
+            );
+        }
+        Err(e) => {
+            println!("DEBUG: Import failed with error: {}", e);
+        }
+    }
+
+    result
 }

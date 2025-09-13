@@ -10,6 +10,8 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import type { Anime } from "@/types";
 import { useAddAnimeToCollection } from "@/features/collection/hooks";
+import { getTierInfo } from "@/lib/anime-utils";
+import { hasEnglishTitle } from "@/lib/anime-utils";
 
 interface AnimeDetailSheetProps {
   anime: Anime | null;
@@ -48,9 +50,11 @@ export function AnimeDetailSheet({
     <Sheet open={isOpen} onOpenChange={onClose}>
       <SheetContent className="w-full sm:max-w-xl overflow-y-auto p-4 rounded-sm">
         <SheetHeader className="pb-4">
-          <SheetTitle className="text-2xl">{anime.title}</SheetTitle>
-          {anime.titleEnglish && (
-            <p className="text-muted-foreground">{anime.titleEnglish}</p>
+          <SheetTitle className="text-2xl">{anime.title.main}</SheetTitle>
+          {hasEnglishTitle(anime.title) && (
+            <p className="text-muted-foreground">
+              {anime.title.english || anime.title.main}
+            </p>
           )}
         </SheetHeader>
 
@@ -58,14 +62,14 @@ export function AnimeDetailSheet({
           <div className="relative aspect-[3/4] w-full max-w-[300px] mx-auto mb-6 overflow-hidden rounded-lg">
             <img
               src={anime.imageUrl}
-              alt={anime.title}
+              alt={anime.title.main}
               className="object-cover w-full h-full"
             />
             <Badge
               className="absolute top-2 right-2"
-              style={{ backgroundColor: anime.tier.color }}
+              style={{ backgroundColor: getTierInfo(anime.tier).color }}
             >
-              {anime.tier.name}
+              {getTierInfo(anime.tier).name}
             </Badge>
           </div>
         )}

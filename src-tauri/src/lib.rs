@@ -5,12 +5,9 @@ mod shared;
 
 use application::{
     commands::*,
-    services::{AnimeService, CollectionService, ImportService},
+    services::{AnimeService, CollectionService, ImportService, ProviderManager},
 };
-use infrastructure::{
-    database::{repositories::*, Database},
-    external::jikan::JikanClient,
-};
+use infrastructure::database::{repositories::*, Database};
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -48,6 +45,13 @@ pub fn run() {
         import_from_csv,
         validate_anime_titles,
         import_validated_anime,
+        // Provider commands
+        list_providers,
+        set_primary_provider,
+        get_primary_provider,
+        get_enabled_providers,
+        get_provider_rate_limit,
+        get_age_restrictions,
     ]);
 
     // 2) Export bindings in debug builds
@@ -86,9 +90,8 @@ pub fn run() {
                     .expect("Failed to run database migrations");
             }
 
-            // Initialize external clients
-            let jikan_client =
-                Arc::new(JikanClient::new().expect("Failed to initialize Jikan client"));
+            // Initialize provider manager
+            let provider_manager = Arc::new(tokio::sync::Mutex::new(ProviderManager::new()));
 
             // Initialize repositories
             let anime_repo: Arc<dyn domain::repositories::AnimeRepository> =
@@ -99,7 +102,7 @@ pub fn run() {
             // Initialize services
             let anime_service = Arc::new(AnimeService::new(
                 Arc::clone(&anime_repo),
-                Arc::clone(&jikan_client),
+                Arc::clone(&provider_manager),
             ));
 
             let collection_service = Arc::new(CollectionService::new(
@@ -109,13 +112,14 @@ pub fn run() {
 
             let import_service = Arc::new(ImportService::new(
                 Arc::clone(&anime_repo),
-                Arc::clone(&jikan_client),
+                Arc::clone(&provider_manager),
             ));
 
             // Manage state so commands can access services via `State<T>`
             app.manage(anime_service);
             app.manage(collection_service);
             app.manage(import_service);
+            app.manage(provider_manager);
 
             Ok(())
         })

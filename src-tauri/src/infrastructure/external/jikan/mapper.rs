@@ -1,8 +1,12 @@
 use crate::domain::{
-    entities::{AiredDates, Anime, Genre},
+    entities::{AiredDates, AnimeDetailed, Genre},
     services::ScoreCalculator,
-    value_objects::{AnimeStatus, AnimeTier, AnimeType, QualityMetrics},
+    value_objects::{
+        AnimeProvider, AnimeStatus, AnimeTier, AnimeTitle, AnimeType, ProviderMetadata,
+        QualityMetrics, UnifiedAgeRestriction,
+    },
 };
+use crate::infrastructure::shared::mappers::age_restriction_mapper::AgeRestrictionMapper;
 use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
@@ -11,7 +15,7 @@ use super::dto::{JikanAnimeData, JikanEntity};
 pub struct JikanMapper;
 
 impl JikanMapper {
-    pub fn to_domain(dto: JikanAnimeData) -> Anime {
+    pub fn to_domain(dto: JikanAnimeData) -> AnimeDetailed {
         // Generate a deterministic UUID based on mal_id if available
         // This ensures the same anime always gets the same UUID in our system
         let id = if dto.mal_id > 0 {
@@ -23,33 +27,49 @@ impl JikanMapper {
             Uuid::new_v4()
         };
 
-        let mut anime = Anime {
+        // Create title with all variants
+        let title = AnimeTitle::with_variants(
+            dto.title.clone(),
+            dto.title_english.clone(),
+            dto.title_japanese.clone(),
+            None, // romaji not provided by Jikan
+        );
+
+        // Create provider metadata with Jikan as primary provider
+        let mut provider_metadata =
+            ProviderMetadata::new(AnimeProvider::Jikan, dto.mal_id.to_string());
+        provider_metadata.add_provider_url(AnimeProvider::Jikan, dto.url.clone());
+
+        let mut anime = AnimeDetailed {
             id,
-            mal_id: dto.mal_id,
-            title: dto.title.clone(),
-            title_english: dto.title_english.clone(),
-            title_japanese: dto.title_japanese.clone(),
+            title,
+            provider_metadata,
             score: dto.score,
-            scored_by: dto.scored_by,
-            rank: dto.rank,
-            popularity: dto.popularity,
-            members: dto.members,
-            favorites: dto.favorites,
+            scored_by: dto.scored_by.map(|v| v as u32),
+            rank: dto.rank.map(|v| v as u32),
+            popularity: dto.popularity.map(|v| v as u32),
+            members: dto.members.map(|v| v as u32),
+            favorites: dto.favorites.map(|v| v as u32),
             synopsis: dto.synopsis.clone(),
-            episodes: dto.episodes,
+            episodes: dto.episodes.map(|v| v as u16),
             status: Self::map_status(dto.status.as_deref()),
             aired: Self::map_aired_dates(&dto.aired),
             anime_type: Self::map_type(dto.anime_type.as_deref()),
-            rating: dto.rating.clone(),
+            age_restriction: Self::map_rating(&dto.rating),
             genres: Self::map_genres(&dto.genres),
             studios: Self::map_studios(&dto.studios),
             source: dto.source.clone(),
             duration: dto.duration.clone(),
             image_url: Self::extract_image_url(&dto),
-            mal_url: Some(dto.url.clone()),
+            banner_image: None,
+            trailer_url: None,
             composite_score: 0.0,
             tier: AnimeTier::default(),
             quality_metrics: QualityMetrics::default(),
+            // episodes_list: Vec::new(), // Removed - field deleted
+            // relations: Vec::new(),     // Removed - field deleted
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
         };
 
         // Calculate scores
@@ -78,6 +98,12 @@ impl JikanMapper {
             Some("Music") => AnimeType::Music,
             _ => AnimeType::Unknown,
         }
+    }
+
+    fn map_rating(rating: &Option<String>) -> Option<UnifiedAgeRestriction> {
+        rating
+            .as_ref()
+            .and_then(|r| AgeRestrictionMapper::map_to_unified(&AnimeProvider::Jikan, r))
     }
 
     fn map_aired_dates(aired: &super::dto::JikanAired) -> AiredDates {
@@ -152,7 +178,6 @@ impl JikanMapper {
 
                 Genre {
                     id,
-                    mal_id: g.mal_id,
                     name: g.name.clone(),
                 }
             })

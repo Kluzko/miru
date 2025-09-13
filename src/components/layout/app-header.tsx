@@ -1,16 +1,25 @@
 "use client";
 
-import type React from "react";
+import * as React from "react";
 
-import { Bell, X, Clock, Star, Download, Library } from "lucide-react";
+import { Bell, X, Clock, Star, Download, Library, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
+import { useLocation, Link } from "react-router-dom";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Breadcrumb,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 
 interface Notification {
   id: string;
@@ -53,11 +62,60 @@ const mockNotifications: Notification[] = [
 ];
 
 export function AppHeader() {
+  const location = useLocation();
   const [notifications, setNotifications] =
     useState<Notification[]>(mockNotifications);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
+
+  // Generate breadcrumbs from pathname
+  const generateBreadcrumbs = () => {
+    const pathSegments = location.pathname.split("/").filter(Boolean);
+    const breadcrumbs: Array<{ label: string; href?: string }> = [
+      { label: "Home", href: "/" },
+    ];
+
+    let currentPath = "";
+    pathSegments.forEach((segment, index) => {
+      currentPath += `/${segment}`;
+      const isLast = index === pathSegments.length - 1;
+
+      // Customize labels based on segments
+      let label = segment.charAt(0).toUpperCase() + segment.slice(1);
+      switch (segment) {
+        case "dashboard":
+          label = "Dashboard";
+          break;
+        case "explore":
+          label = "Explore";
+          break;
+        case "collections":
+          label = "Collections";
+          break;
+        case "import":
+          label = "Import";
+          break;
+        case "anime":
+          label = "Anime";
+          break;
+        default:
+          // If it's a UUID or ID, show as "Details"
+          if (segment.match(/^[a-f\d-]{36}$/i) || segment.match(/^\d+$/)) {
+            label = "Details";
+          }
+      }
+
+      breadcrumbs.push({
+        label,
+        href: isLast ? undefined : currentPath,
+      });
+    });
+
+    return breadcrumbs;
+  };
+
+  const breadcrumbs = generateBreadcrumbs();
 
   const markAsRead = (id: string) => {
     setNotifications((prev) =>
@@ -91,7 +149,39 @@ export function AppHeader() {
   return (
     <header className="h-16 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
       <div className="flex items-center justify-between h-full px-6">
-        <div className="flex items-center gap-4"></div>
+        <div className="flex items-center gap-4">
+          <Breadcrumb>
+            <BreadcrumbList>
+              {breadcrumbs.map((crumb, index) => {
+                const isLast = index === breadcrumbs.length - 1;
+
+                return (
+                  <React.Fragment key={index}>
+                    <BreadcrumbItem>
+                      {crumb.href ? (
+                        <BreadcrumbLink asChild>
+                          <Link
+                            to={crumb.href}
+                            className="flex items-center gap-1"
+                          >
+                            {index === 0 && <Home className="h-4 w-4" />}
+                            {crumb.label}
+                          </Link>
+                        </BreadcrumbLink>
+                      ) : (
+                        <BreadcrumbPage className="flex items-center gap-1">
+                          {index === 0 && <Home className="h-4 w-4" />}
+                          {crumb.label}
+                        </BreadcrumbPage>
+                      )}
+                    </BreadcrumbItem>
+                    {!isLast && <BreadcrumbSeparator />}
+                  </React.Fragment>
+                );
+              })}
+            </BreadcrumbList>
+          </Breadcrumb>
+        </div>
 
         <div className="flex items-center gap-4">
           {/* Notifications */}

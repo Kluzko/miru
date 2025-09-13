@@ -3,12 +3,15 @@ use specta::Type;
 use std::fmt;
 use std::str::FromStr;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "snake_case")]
+#[derive(
+    diesel_derive_enum::DbEnum, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type,
+)]
+#[ExistingTypePath = "crate::infrastructure::database::schema::sql_types::AnimeStatus"]
 pub enum AnimeStatus {
     Airing,
     Finished,
     NotYetAired,
+    Cancelled,
     Unknown,
 }
 
@@ -18,6 +21,7 @@ impl AnimeStatus {
             AnimeStatus::Airing => "Currently Airing",
             AnimeStatus::Finished => "Finished Airing",
             AnimeStatus::NotYetAired => "Not Yet Aired",
+            AnimeStatus::Cancelled => "Cancelled",
             AnimeStatus::Unknown => "Unknown",
         }
     }
@@ -35,6 +39,7 @@ impl From<&str> for AnimeStatus {
             "currently airing" | "airing" => AnimeStatus::Airing,
             "finished airing" | "finished" => AnimeStatus::Finished,
             "not yet aired" | "not_yet_aired" => AnimeStatus::NotYetAired,
+            "cancelled" => AnimeStatus::Cancelled,
             _ => AnimeStatus::Unknown,
         }
     }

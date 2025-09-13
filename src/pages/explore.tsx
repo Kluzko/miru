@@ -1,6 +1,12 @@
 // src/pages/search.tsx
 import { useState } from "react";
-import { Search, Filter, SlidersHorizontal, Star } from "lucide-react";
+import {
+  Search,
+  Filter,
+  SlidersHorizontal,
+  Star,
+  Calendar,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { SearchInput } from "@/components/common/search-input";
 import { AnimeGrid } from "@/features/anime/components";
@@ -19,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { MultiSelect } from "@/components/common/multi-select";
 
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import type { Anime } from "@/types";
@@ -30,12 +37,34 @@ export function ExplorePage() {
   const [filters, setFilters] = useState({
     type: "any",
     status: "any",
-    genre: "any",
-    year: "any",
+    genres: [] as string[],
+    yearRange: [1950, new Date().getFullYear()],
     score: [0],
     episodes: "any",
     rating: "any",
   });
+
+  // Genre options for multi-select
+  const genreOptions = [
+    { label: "Action", value: "action" },
+    { label: "Adventure", value: "adventure" },
+    { label: "Comedy", value: "comedy" },
+    { label: "Drama", value: "drama" },
+    { label: "Fantasy", value: "fantasy" },
+    { label: "Horror", value: "horror" },
+    { label: "Mystery", value: "mystery" },
+    { label: "Psychological", value: "psychological" },
+    { label: "Romance", value: "romance" },
+    { label: "Sci-Fi", value: "sci-fi" },
+    { label: "Slice of Life", value: "slice-of-life" },
+    { label: "Sports", value: "sports" },
+    { label: "Supernatural", value: "supernatural" },
+    { label: "Thriller", value: "thriller" },
+    { label: "Music", value: "music" },
+    { label: "School", value: "school" },
+    { label: "Military", value: "military" },
+    { label: "Historical", value: "historical" },
+  ];
   const debouncedQuery = useDebounce(query, 500);
 
   const { data: results = [], isLoading } = useAnimeSearch(debouncedQuery);
@@ -132,60 +161,20 @@ export function ExplorePage() {
                   </Select>
                 </div>
 
-                {/* Year Filter */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Year</label>
-                  <Select
-                    value={filters.year}
-                    onValueChange={(value) =>
-                      setFilters((prev) => ({ ...prev, year: value }))
+                {/* Genre Filter - Multi-select */}
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm font-medium">Genres</label>
+                  <MultiSelect
+                    options={genreOptions}
+                    onValueChange={(values) =>
+                      setFilters((prev) => ({ ...prev, genres: values }))
                     }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Any year" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="any">Any year</SelectItem>
-                      {Array.from(
-                        { length: 20 },
-                        (_, i) => new Date().getFullYear() - i,
-                      ).map((year) => (
-                        <SelectItem key={year} value={year.toString()}>
-                          {year}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Genre Filter */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Genre</label>
-                  <Select
-                    value={filters.genre}
-                    onValueChange={(value) =>
-                      setFilters((prev) => ({ ...prev, genre: value }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Any genre" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="any">Any genre</SelectItem>
-                      <SelectItem value="action">Action</SelectItem>
-                      <SelectItem value="adventure">Adventure</SelectItem>
-                      <SelectItem value="comedy">Comedy</SelectItem>
-                      <SelectItem value="drama">Drama</SelectItem>
-                      <SelectItem value="fantasy">Fantasy</SelectItem>
-                      <SelectItem value="horror">Horror</SelectItem>
-                      <SelectItem value="romance">Romance</SelectItem>
-                      <SelectItem value="sci-fi">Sci-Fi</SelectItem>
-                      <SelectItem value="slice-of-life">
-                        Slice of Life
-                      </SelectItem>
-                      <SelectItem value="thriller">Thriller</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    defaultValue={filters.genres}
+                    placeholder="Select genres..."
+                    variant="default"
+                    animation={0.1}
+                    maxCount={3}
+                  />
                 </div>
 
                 {/* Episodes Filter */}
@@ -237,6 +226,26 @@ export function ExplorePage() {
                 </div>
               </div>
 
+              {/* Year Range Filter */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4" />
+                  <label className="text-sm font-medium">
+                    Year Range: {filters.yearRange[0]} - {filters.yearRange[1]}
+                  </label>
+                </div>
+                <Slider
+                  value={filters.yearRange}
+                  onValueChange={(value) =>
+                    setFilters((prev) => ({ ...prev, yearRange: value }))
+                  }
+                  max={new Date().getFullYear()}
+                  min={1950}
+                  step={1}
+                  className="w-full"
+                />
+              </div>
+
               {/* Score Filter */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
@@ -265,8 +274,8 @@ export function ExplorePage() {
                     setFilters({
                       type: "any",
                       status: "any",
-                      genre: "any",
-                      year: "any",
+                      genres: [],
+                      yearRange: [1950, new Date().getFullYear()],
                       score: [0],
                       episodes: "any",
                       rating: "any",

@@ -17,6 +17,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { Slider } from "@/components/ui/slider";
+import { MultiSelect } from "@/components/common/multi-select";
 import {
   Star,
   Search,
@@ -73,9 +75,11 @@ export function AnimeTable({
 
   const {
     genreFilter,
-    setGenreFilter,
+    genreFilters,
+    setGenreFilters,
     yearFilter,
-    setYearFilter,
+    yearRange,
+    setYearRange,
     statusFilter,
     setStatusFilter,
     typeFilter,
@@ -90,7 +94,6 @@ export function AnimeTable({
     removeFilter,
     clearAllFilters,
     uniqueGenres,
-    uniqueYears,
     uniqueStatuses,
   } = useAnimeFilters(animes);
 
@@ -99,7 +102,9 @@ export function AnimeTable({
     {
       searchTerm,
       genreFilter,
+      genreFilters,
       yearFilter,
+      yearRange,
       statusFilter,
       typeFilter,
       sortBy,
@@ -167,7 +172,7 @@ export function AnimeTable({
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="font-medium text-foreground group-hover:text-primary transition-colors truncate">
-              {anime.title}
+              {anime.title.main}
             </h3>
             <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
               <span>{anime.genres[0]?.name || "Unknown"}</span>
@@ -216,7 +221,7 @@ export function AnimeTable({
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
                 <h3 className="font-semibold text-lg text-foreground group-hover:text-primary transition-colors truncate mb-1">
-                  {anime.title}
+                  {anime.title.main}
                 </h3>
                 <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
                   {anime.synopsis}
@@ -368,8 +373,9 @@ export function AnimeTable({
 
                 <div className="flex items-center gap-1">
                   {/* Reset All Button - Only show when filters/sorting are active */}
-                  {(genreFilter !== "all" ||
-                    yearFilter !== "all" ||
+                  {(genreFilters.length > 0 ||
+                    yearRange[0] !== 1950 ||
+                    yearRange[1] !== new Date().getFullYear() ||
                     statusFilter !== "all" ||
                     typeFilter !== "all" ||
                     sortBy !== "rating" ||
@@ -400,8 +406,9 @@ export function AnimeTable({
                     <CollapsibleTrigger asChild>
                       <Button
                         variant={
-                          genreFilter !== "all" ||
-                          yearFilter !== "all" ||
+                          genreFilters.length > 0 ||
+                          yearRange[0] !== 1950 ||
+                          yearRange[1] !== new Date().getFullYear() ||
                           statusFilter !== "all" ||
                           typeFilter !== "all"
                             ? "secondary"
@@ -410,8 +417,9 @@ export function AnimeTable({
                         size="sm"
                         className={cn(
                           "gap-2 bg-transparent relative",
-                          (genreFilter !== "all" ||
-                            yearFilter !== "all" ||
+                          (genreFilters.length > 0 ||
+                            yearRange[0] !== 1950 ||
+                            yearRange[1] !== new Date().getFullYear() ||
                             statusFilter !== "all" ||
                             typeFilter !== "all") &&
                             "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20",
@@ -419,18 +427,22 @@ export function AnimeTable({
                       >
                         <Filter className="h-4 w-4" />
                         Filters
-                        {(genreFilter !== "all" ||
-                          yearFilter !== "all" ||
+                        {(genreFilters.length > 0 ||
+                          yearRange[0] !== 1950 ||
+                          yearRange[1] !== new Date().getFullYear() ||
                           statusFilter !== "all" ||
                           typeFilter !== "all") && (
                           <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs rounded-full w-5 h-5 flex items-center justify-center">
                             {
                               [
-                                genreFilter,
-                                yearFilter,
-                                statusFilter,
-                                typeFilter,
-                              ].filter((f) => f !== "all").length
+                                genreFilters.length > 0 ? "genres" : null,
+                                yearRange[0] !== 1950 ||
+                                yearRange[1] !== new Date().getFullYear()
+                                  ? "year"
+                                  : null,
+                                statusFilter !== "all" ? statusFilter : null,
+                                typeFilter !== "all" ? typeFilter : null,
+                              ].filter((f) => f !== null).length
                             }
                           </span>
                         )}
@@ -491,60 +503,61 @@ export function AnimeTable({
 
           {/* Filters Panel */}
           <Collapsible open={filtersExpanded} onOpenChange={setFiltersExpanded}>
-            <CollapsibleContent className="mt-4">
-              <div className="bg-card rounded-lg border border-border p-4">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">
-                      Genre
+            <CollapsibleContent className="mt-3">
+              <div className="bg-card border border-border rounded-lg p-3">
+                <div className="grid grid-cols-2 md:grid-cols-12 gap-3 items-end">
+                  {/* Genres */}
+                  <div className="col-span-2 md:col-span-4">
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                      Genres
                     </label>
-                    <Select value={genreFilter} onValueChange={setGenreFilter}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="All Genres" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Genres</SelectItem>
-                        {uniqueGenres.map((genre) => (
-                          <SelectItem key={genre} value={genre}>
-                            {genre}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <MultiSelect
+                      options={uniqueGenres.map((genre) => ({
+                        label: genre,
+                        value: genre,
+                      }))}
+                      onValueChange={setGenreFilters}
+                      defaultValue={genreFilters}
+                      placeholder="Select genres..."
+                      variant="default"
+                      animation={0}
+                      maxCount={2}
+                    />
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">
-                      Year
+                  {/* Year Range */}
+                  <div className="col-span-2 md:col-span-3">
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                      Year: {yearRange[0]} - {yearRange[1]}
                     </label>
-                    <Select value={yearFilter} onValueChange={setYearFilter}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="All Years" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Years</SelectItem>
-                        {uniqueYears.map((year) => (
-                          <SelectItem key={year} value={year.toString()}>
-                            {year}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="px-2 py-1">
+                      <Slider
+                        value={yearRange}
+                        onValueChange={(value) =>
+                          setYearRange(value as [number, number])
+                        }
+                        max={new Date().getFullYear()}
+                        min={1950}
+                        step={1}
+                        className="w-full"
+                      />
+                    </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">
+                  {/* Status */}
+                  <div className="col-span-1 md:col-span-2">
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">
                       Status
                     </label>
                     <Select
                       value={statusFilter}
                       onValueChange={setStatusFilter}
                     >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="All Statuses" />
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue placeholder="All" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">All Statuses</SelectItem>
+                        <SelectItem value="all">All</SelectItem>
                         {uniqueStatuses.map((status) => (
                           <SelectItem key={status} value={status}>
                             {status.replace("_", " ")}
@@ -554,26 +567,45 @@ export function AnimeTable({
                     </Select>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">
-                      Group By
+                  {/* Group By */}
+                  <div className="col-span-1 md:col-span-2">
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                      Group
                     </label>
                     <Select
                       value={groupBy}
                       onValueChange={(value) => setGroupBy(value as any)}
                     >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="No Grouping" />
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue placeholder="None" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">No Grouping</SelectItem>
-                        <SelectItem value="letter">By Letter</SelectItem>
-                        <SelectItem value="year">By Decade</SelectItem>
-                        <SelectItem value="rating">By Rating</SelectItem>
-                        <SelectItem value="genre">By Genre</SelectItem>
-                        <SelectItem value="status">By Status</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
+                        <SelectItem value="letter">Letter</SelectItem>
+                        <SelectItem value="year">Decade</SelectItem>
+                        <SelectItem value="rating">Rating</SelectItem>
+                        <SelectItem value="genre">Genre</SelectItem>
+                        <SelectItem value="status">Status</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  {/* Clear Button */}
+                  <div className="col-span-2 md:col-span-1 flex justify-end">
+                    {(genreFilters.length > 0 ||
+                      yearRange[0] !== 1950 ||
+                      yearRange[1] !== new Date().getFullYear() ||
+                      statusFilter !== "all" ||
+                      groupBy !== "none") && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={clearAllFilters}
+                        className="h-9 px-2 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        Clear
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>

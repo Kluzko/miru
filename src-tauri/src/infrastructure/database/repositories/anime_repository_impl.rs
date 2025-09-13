@@ -2,14 +2,19 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use chrono::Utc;
 use diesel::prelude::*;
 use tokio::task;
 use uuid::Uuid;
 
 use crate::domain::{
-    entities::{AiredDates, Anime, Genre},
+    entities::{
+        anime_detailed::{AiredDates, AnimeDetailed},
+        Genre,
+    },
     repositories::AnimeRepository,
-    value_objects::{AnimeTier, QualityMetrics},
+    value_objects::{AnimeProvider, AnimeTitle, ProviderMetadata, QualityMetrics},
+    // AnimeTier removed - not used in this file
 };
 use crate::infrastructure::database::{
     connection::Database,
@@ -29,6 +34,155 @@ impl AnimeRepositoryImpl {
     pub fn new(db: Arc<Database>) -> Self {
         Self { db }
     }
+
+    // Helper: Convert Anime to AnimeDetailed
+    fn model_to_entity(
+        model: Anime,
+        genres: Vec<Genre>,
+        studios: Vec<String>,
+        quality_metrics: Option<QualityMetrics>,
+    ) -> AnimeDetailed {
+        // Create AnimeTitle from database fields
+        let mut title = AnimeTitle::with_variants(
+            model.title_main,
+            model.title_english,
+            model.title_japanese,
+            model.title_romaji,
+        );
+
+        // Set native title and synonyms
+        title.native = model.title_native;
+        title.synonyms = model
+            .title_synonyms
+            .and_then(|v| serde_json::from_value::<Vec<String>>(v).ok())
+            .unwrap_or_default();
+
+        // Create ProviderMetadata - we'll populate from external_ids table later
+        // For now, create minimal metadata with Jikan as default
+        let provider_metadata = ProviderMetadata::new(
+            AnimeProvider::Jikan, // Default provider
+            "0".to_string(),      // Will be populated from external_ids table
+        );
+
+        AnimeDetailed {
+            id: model.id,
+            title,
+            provider_metadata,
+            score: model.score,
+            scored_by: model.scored_by.map(|v| v as u32),
+            rank: model.rank.map(|v| v as u32),
+            popularity: model.popularity.map(|v| v as u32),
+            members: model.members.map(|v| v as u32),
+            favorites: model.favorites.map(|v| v as u32),
+            synopsis: model.synopsis,
+            episodes: model.episodes.map(|v| v as u16),
+            status: model.status,
+            aired: AiredDates {
+                from: model.aired_from,
+                to: model.aired_to,
+            },
+            anime_type: model.anime_type,
+            age_restriction: model.age_restriction,
+            genres,
+            studios,
+            source: model.source,
+            duration: model.duration,
+            image_url: model.image_url,
+            banner_image: model.banner_image,
+            trailer_url: model.trailer_url,
+            composite_score: model.composite_score,
+            tier: model.tier,
+            quality_metrics: quality_metrics.unwrap_or_default(),
+            // episodes_list: Vec::new(), // Removed - field deleted
+            // relations: Vec::new(),     // Removed - field deleted
+            created_at: model.created_at,
+            updated_at: model.updated_at,
+        }
+    }
+
+    // Helper: Convert AnimeDetailed to NewAnime for insertion
+    fn entity_to_new_model(entity: &AnimeDetailed) -> NewAnime {
+        NewAnime {
+            id: entity.id,
+            title_english: entity.title.english.clone(),
+            title_japanese: entity.title.japanese.clone(),
+            score: entity.score,
+            scored_by: entity.scored_by.map(|v| v as i32),
+            rank: entity.rank.map(|v| v as i32),
+            popularity: entity.popularity.map(|v| v as i32),
+            members: entity.members.map(|v| v as i32),
+            favorites: entity.favorites.map(|v| v as i32),
+            synopsis: entity.synopsis.clone(),
+            episodes: entity.episodes.map(|v| v as i32),
+            aired_from: entity.aired.from,
+            aired_to: entity.aired.to,
+            source: entity.source.clone(),
+            duration: entity.duration.clone(),
+            image_url: entity.image_url.clone(),
+            composite_score: entity.composite_score,
+            title_main: entity.title.main.clone(),
+            title_romaji: entity.title.romaji.clone(),
+            title_native: entity.title.native.clone(),
+            title_synonyms: if entity.title.synonyms.is_empty() {
+                None
+            } else {
+                Some(
+                    serde_json::to_value(&entity.title.synonyms).unwrap_or(serde_json::Value::Null),
+                )
+            },
+            banner_image: entity.banner_image.clone(),
+            trailer_url: entity.trailer_url.clone(),
+            tier: entity.tier.clone(),
+            quality_metrics: Some(
+                serde_json::to_value(&entity.quality_metrics).unwrap_or(serde_json::Value::Null),
+            ),
+            age_restriction: entity.age_restriction.clone(),
+            status: entity.status.clone(),
+            anime_type: entity.anime_type.clone(),
+        }
+    }
+
+    // Helper: Convert AnimeDetailed to AnimeChangeset for updates
+    fn entity_to_changeset(entity: &AnimeDetailed) -> AnimeChangeset {
+        AnimeChangeset {
+            title_english: entity.title.english.clone(),
+            title_japanese: entity.title.japanese.clone(),
+            score: entity.score,
+            scored_by: entity.scored_by.map(|v| v as i32),
+            rank: entity.rank.map(|v| v as i32),
+            popularity: entity.popularity.map(|v| v as i32),
+            members: entity.members.map(|v| v as i32),
+            favorites: entity.favorites.map(|v| v as i32),
+            synopsis: entity.synopsis.clone(),
+            episodes: entity.episodes.map(|v| v as i32),
+            aired_from: entity.aired.from,
+            aired_to: entity.aired.to,
+            source: entity.source.clone(),
+            duration: entity.duration.clone(),
+            image_url: entity.image_url.clone(),
+            composite_score: entity.composite_score,
+            updated_at: Utc::now(),
+            title_main: entity.title.main.clone(),
+            title_romaji: entity.title.romaji.clone(),
+            title_native: entity.title.native.clone(),
+            title_synonyms: if entity.title.synonyms.is_empty() {
+                None
+            } else {
+                Some(
+                    serde_json::to_value(&entity.title.synonyms).unwrap_or(serde_json::Value::Null),
+                )
+            },
+            banner_image: entity.banner_image.clone(),
+            trailer_url: entity.trailer_url.clone(),
+            tier: entity.tier.clone(),
+            quality_metrics: Some(
+                serde_json::to_value(&entity.quality_metrics).unwrap_or(serde_json::Value::Null),
+            ),
+            age_restriction: entity.age_restriction.clone(),
+            status: entity.status.clone(),
+            anime_type: entity.anime_type.clone(),
+        }
+    }
 }
 
 // -------------------------------------------------------------------------
@@ -37,20 +191,19 @@ impl AnimeRepositoryImpl {
 
 #[async_trait]
 impl AnimeRepository for AnimeRepositoryImpl {
-    async fn find_by_id(&self, id: &Uuid) -> AppResult<Option<Anime>> {
+    async fn find_by_id(&self, id: &Uuid) -> AppResult<Option<AnimeDetailed>> {
         let db = Arc::clone(&self.db);
         let id = *id;
 
-        let model = task::spawn_blocking(move || -> AppResult<Option<AnimeModel>> {
+        let model = task::spawn_blocking(move || -> AppResult<Option<Anime>> {
             let mut conn = db.get_connection()?;
             let m = anime::table
                 .filter(anime::id.eq(id))
-                .first::<AnimeModel>(&mut conn)
+                .first::<Anime>(&mut conn)
                 .optional()?;
             Ok(m)
         })
-        .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))??;
+        .await??;
 
         match model {
             Some(m) => {
@@ -61,21 +214,44 @@ impl AnimeRepository for AnimeRepositoryImpl {
         }
     }
 
-    async fn find_by_mal_id(&self, mal_id: i32) -> AppResult<Option<Anime>> {
-        Validator::validate_mal_id(mal_id)?;
+    async fn find_by_external_id(
+        &self,
+        provider: &AnimeProvider,
+        external_id: &str,
+    ) -> AppResult<Option<AnimeDetailed>> {
+        use crate::infrastructure::database::schema::anime_external_ids;
 
         let db = Arc::clone(&self.db);
+        let provider_code = match provider {
+            AnimeProvider::Jikan => "jikan",
+            AnimeProvider::AniList => "anilist",
+            AnimeProvider::Kitsu => "kitsu",
+            AnimeProvider::TMDB => "tmdb",
+            AnimeProvider::AniDB => "anidb",
+        }
+        .to_string();
+        let external_id = external_id.to_string();
 
-        let model = task::spawn_blocking(move || -> AppResult<Option<AnimeModel>> {
+        let model = task::spawn_blocking(move || -> AppResult<Option<Anime>> {
             let mut conn = db.get_connection()?;
-            let m = anime::table
-                .filter(anime::mal_id.eq(mal_id))
-                .first::<AnimeModel>(&mut conn)
+            let anime_id: Option<Uuid> = anime_external_ids::table
+                .filter(anime_external_ids::provider_code.eq(&provider_code))
+                .filter(anime_external_ids::external_id.eq(&external_id))
+                .select(anime_external_ids::anime_id)
+                .first::<Uuid>(&mut conn)
                 .optional()?;
-            Ok(m)
+
+            if let Some(id) = anime_id {
+                let m = anime::table
+                    .filter(anime::id.eq(id))
+                    .first::<Anime>(&mut conn)
+                    .optional()?;
+                Ok(m)
+            } else {
+                Ok(None)
+            }
         })
-        .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))??;
+        .await??;
 
         match model {
             Some(m) => {
@@ -86,7 +262,7 @@ impl AnimeRepository for AnimeRepositoryImpl {
         }
     }
 
-    async fn search(&self, query: &str, limit: usize) -> AppResult<Vec<Anime>> {
+    async fn search(&self, query: &str, limit: usize) -> AppResult<Vec<AnimeDetailed>> {
         if query.is_empty() {
             return Err(AppError::InvalidInput(
                 "Search query cannot be empty".into(),
@@ -99,7 +275,7 @@ impl AnimeRepository for AnimeRepositoryImpl {
         let db = Arc::clone(&self.db);
         let q = query.to_string();
 
-        let models = task::spawn_blocking(move || -> AppResult<Vec<AnimeModel>> {
+        let models = task::spawn_blocking(move || -> AppResult<Vec<Anime>> {
             let mut conn = db.get_connection()?;
 
             // Build fragments with bound params (safe; no interpolation).
@@ -127,34 +303,62 @@ impl AnimeRepository for AnimeRepositoryImpl {
                 .filter(pred)
                 .order((rank.desc(), anime::composite_score.desc()))
                 .limit(limit as i64)
-                .load::<AnimeModel>(&mut conn)?;
+                .load::<Anime>(&mut conn)?;
             Ok(rows)
         })
-        .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))??;
+        .await??;
 
         self.load_anime_batch_with_relations(models).await
     }
 
-    async fn save(&self, anime: &Anime) -> AppResult<Anime> {
-        Validator::validate_anime_title(&anime.title)?;
+    async fn save(&self, anime: &AnimeDetailed) -> AppResult<AnimeDetailed> {
+        println!(
+            "DEBUG: Repository saving anime: {} (ID: {})",
+            anime.title.main, anime.id
+        );
+
+        Validator::validate_anime_title(&anime.title.main)?;
         if let Some(score) = anime.score {
             Validator::validate_score(score)?;
         }
 
+        println!("DEBUG: Calling upsert_anime for: {}", anime.title.main);
         let saved_model = self.upsert_anime(anime).await?;
 
+        println!("DEBUG: Upserting genres for anime: {}", anime.title.main);
         self.upsert_genres(saved_model.id, &anime.genres).await?;
+
+        println!("DEBUG: Upserting studios for anime: {}", anime.title.main);
         self.upsert_studios(saved_model.id, &anime.studios).await?;
+
+        println!(
+            "DEBUG: Upserting quality metrics for anime: {}",
+            anime.title.main
+        );
         self.upsert_quality_metrics(saved_model.id, &anime.quality_metrics)
             .await?;
 
-        self.find_by_id(&saved_model.id)
-            .await?
-            .ok_or_else(|| AppError::InternalError("Failed to retrieve saved anime".to_string()))
+        println!(
+            "DEBUG: Building final anime result from saved data: {}",
+            anime.title.main
+        );
+
+        // Build AnimeDetailed directly from saved data instead of querying DB again
+        let result = Self::model_to_entity(
+            saved_model,
+            anime.genres.clone(),                // We already have the genres
+            anime.studios.clone(),               // We already have the studios
+            Some(anime.quality_metrics.clone()), // We already have the metrics
+        );
+
+        println!(
+            "DEBUG: Successfully built anime result: {} (ID: {})",
+            result.title.main, result.id
+        );
+        Ok(result)
     }
 
-    async fn save_batch(&self, anime_list: &[Anime]) -> AppResult<Vec<Anime>> {
+    async fn save_batch(&self, anime_list: &[AnimeDetailed]) -> AppResult<Vec<AnimeDetailed>> {
         if anime_list.is_empty() {
             return Ok(vec![]);
         }
@@ -162,71 +366,20 @@ impl AnimeRepository for AnimeRepositoryImpl {
         let db = Arc::clone(&self.db);
         let to_upsert = anime_list.to_vec();
 
-        let saved_models = task::spawn_blocking(move || -> AppResult<Vec<AnimeModel>> {
+        let saved_models = task::spawn_blocking(move || -> AppResult<Vec<Anime>> {
             let mut conn = db.get_connection()?;
 
-            conn.transaction::<Vec<AnimeModel>, AppError, _>(|conn| {
+            conn.transaction::<Vec<Anime>, AppError, _>(|conn| {
                 let mut out = Vec::with_capacity(to_upsert.len());
 
                 for a in &to_upsert {
-                    let new_row = NewAnime {
-                        id: a.id,
-                        mal_id: a.mal_id,
-                        title: a.title.clone(),
-                        title_english: a.title_english.clone(),
-                        title_japanese: a.title_japanese.clone(),
-                        score: a.score,
-                        scored_by: a.scored_by,
-                        rank: a.rank,
-                        popularity: a.popularity,
-                        members: a.members,
-                        favorites: a.favorites,
-                        synopsis: a.synopsis.clone(),
-                        episodes: a.episodes,
-                        status: a.status.to_string(),
-                        aired_from: a.aired.from,
-                        aired_to: a.aired.to,
-                        anime_type: a.anime_type.to_string(),
-                        rating: a.rating.clone(),
-                        source: a.source.clone(),
-                        duration: a.duration.clone(),
-                        image_url: a.image_url.clone(),
-                        mal_url: a.mal_url.clone(),
-                        composite_score: a.composite_score,
-                    };
-
-                    let changes = AnimeChangeset {
-                        mal_id: a.mal_id,
-                        title: a.title.clone(),
-                        title_english: a.title_english.clone(),
-                        title_japanese: a.title_japanese.clone(),
-                        score: a.score,
-                        scored_by: a.scored_by,
-                        rank: a.rank,
-                        popularity: a.popularity,
-                        members: a.members,
-                        favorites: a.favorites,
-                        synopsis: a.synopsis.clone(),
-                        episodes: a.episodes,
-                        status: a.status.to_string(),
-                        aired_from: a.aired.from,
-                        aired_to: a.aired.to,
-                        anime_type: a.anime_type.to_string(),
-                        rating: a.rating.clone(),
-                        source: a.source.clone(),
-                        duration: a.duration.clone(),
-                        image_url: a.image_url.clone(),
-                        mal_url: a.mal_url.clone(),
-                        composite_score: a.composite_score,
-                        updated_at: chrono::Utc::now(),
-                    };
+                    // For batch operations, we'll use a simpler approach - just insert and handle conflicts
+                    // TODO: Implement proper external ID based conflict resolution for batch operations
+                    let new_row = Self::entity_to_new_model(a);
 
                     let saved = diesel::insert_into(anime::table)
                         .values(&new_row)
-                        .on_conflict(anime::mal_id)
-                        .do_update()
-                        .set(&changes)
-                        .get_result::<AnimeModel>(conn)?;
+                        .get_result::<Anime>(conn)?;
 
                     out.push(saved);
                 }
@@ -234,8 +387,7 @@ impl AnimeRepository for AnimeRepositoryImpl {
                 Ok(out)
             })
         })
-        .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))??;
+        .await??;
 
         for (saved, input) in saved_models.iter().zip(anime_list.iter()) {
             self.upsert_genres(saved.id, &input.genres).await?;
@@ -247,7 +399,7 @@ impl AnimeRepository for AnimeRepositoryImpl {
         self.load_anime_batch_with_relations(saved_models).await
     }
 
-    async fn update(&self, anime: &Anime) -> AppResult<Anime> {
+    async fn update(&self, anime: &AnimeDetailed) -> AppResult<AnimeDetailed> {
         if self.find_by_id(&anime.id).await?.is_none() {
             return Err(AppError::NotFound(format!(
                 "Anime with ID {} not found",
@@ -273,11 +425,13 @@ impl AnimeRepository for AnimeRepositoryImpl {
             }
             Ok(())
         })
-        .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))?
+        .await?
     }
 
-    async fn find_by_title_variations(&self, search_title: &str) -> AppResult<Option<Anime>> {
+    async fn find_by_title_variations(
+        &self,
+        search_title: &str,
+    ) -> AppResult<Option<AnimeDetailed>> {
         let search_title_lower = search_title.to_lowercase();
         let search_pattern = format!("%{}%", search_title_lower);
         let db = Arc::clone(&self.db);
@@ -286,19 +440,18 @@ impl AnimeRepository for AnimeRepositoryImpl {
             let mut conn = db.get_connection()?;
 
             // Search across all title fields using LIKE with case insensitive matching
-            let anime_models: Vec<AnimeModel> = anime::table
+            let anime_models: Vec<Anime> = anime::table
                 .filter(
-                    anime::title
+                    anime::title_main
                         .ilike(&search_pattern)
                         .or(anime::title_english.ilike(&search_pattern))
                         .or(anime::title_japanese.ilike(&search_pattern)),
                 )
                 .limit(1)
-                .load::<AnimeModel>(&mut conn)?;
-            Ok::<Vec<AnimeModel>, AppError>(anime_models)
+                .load::<Anime>(&mut conn)?;
+            Ok::<Vec<Anime>, AppError>(anime_models)
         })
-        .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))?;
+        .await?;
 
         let anime_models = result?;
         if anime_models.is_empty() {
@@ -310,22 +463,21 @@ impl AnimeRepository for AnimeRepositoryImpl {
         }
     }
 
-    async fn get_all(&self, offset: i64, limit: i64) -> AppResult<Vec<Anime>> {
+    async fn get_all(&self, offset: i64, limit: i64) -> AppResult<Vec<AnimeDetailed>> {
         Validator::validate_pagination(offset, limit)?;
 
         let db = Arc::clone(&self.db);
 
-        let models = task::spawn_blocking(move || -> AppResult<Vec<AnimeModel>> {
+        let models = task::spawn_blocking(move || -> AppResult<Vec<Anime>> {
             let mut conn = db.get_connection()?;
             let rows = anime::table
                 .offset(offset)
                 .limit(limit)
                 .order(anime::composite_score.desc())
-                .load::<AnimeModel>(&mut conn)?;
+                .load::<Anime>(&mut conn)?;
             Ok(rows)
         })
-        .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))??;
+        .await??;
 
         self.load_anime_batch_with_relations(models).await
     }
@@ -338,15 +490,15 @@ impl AnimeRepository for AnimeRepositoryImpl {
 impl AnimeRepositoryImpl {
     async fn load_anime_batch_with_relations(
         &self,
-        anime_models: Vec<AnimeModel>,
-    ) -> AppResult<Vec<Anime>> {
+        anime_models: Vec<Anime>,
+    ) -> AppResult<Vec<AnimeDetailed>> {
         if anime_models.is_empty() {
             return Ok(Vec::new());
         }
 
         let db = Arc::clone(&self.db);
 
-        let results = task::spawn_blocking(move || -> AppResult<Vec<Anime>> {
+        let results = task::spawn_blocking(move || -> AppResult<Vec<AnimeDetailed>> {
             let mut conn = db.get_connection()?;
 
             let rows_g: Vec<(AnimeGenre, GenreModel)> = AnimeGenre::belonging_to(&anime_models)
@@ -362,7 +514,6 @@ impl AnimeRepositoryImpl {
                         .into_iter()
                         .map(|(_, g)| Genre {
                             id: g.id,
-                            mal_id: g.mal_id,
                             name: g.name,
                         })
                         .collect::<Vec<_>>();
@@ -406,123 +557,146 @@ impl AnimeRepositoryImpl {
                         })
                         .unwrap_or_default();
 
-                    Anime {
-                        id: m.id,
-                        mal_id: m.mal_id,
-                        title: m.title,
-                        title_english: m.title_english,
-                        title_japanese: m.title_japanese,
-                        score: m.score,
-                        scored_by: m.scored_by,
-                        rank: m.rank,
-                        popularity: m.popularity,
-                        members: m.members,
-                        favorites: m.favorites,
-                        synopsis: m.synopsis,
-                        episodes: m.episodes,
-                        status: m.status.as_str().into(),
-                        aired: AiredDates {
-                            from: m.aired_from,
-                            to: m.aired_to,
-                        },
-                        anime_type: m.anime_type.as_str().into(),
-                        rating: m.rating,
-                        genres,
-                        studios,
-                        source: m.source,
-                        duration: m.duration,
-                        image_url: m.image_url,
-                        mal_url: m.mal_url,
-                        composite_score: m.composite_score,
-                        tier: AnimeTier::new(m.composite_score),
-                        quality_metrics,
-                    }
+                    Self::model_to_entity(m, genres, studios, Some(quality_metrics))
                 })
                 .collect::<Vec<_>>();
 
             Ok(out)
         })
-        .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))??;
+        .await??;
 
         Ok(results)
     }
 
-    /// Upsert Anime (by mal_id) and return the saved row.
-    async fn upsert_anime(&self, anime: &Anime) -> AppResult<AnimeModel> {
+    /// Upsert Anime and return the saved row.
+    async fn upsert_anime(&self, anime: &AnimeDetailed) -> AppResult<Anime> {
         let db = Arc::clone(&self.db);
+        let new_anime = Self::entity_to_new_model(anime);
+        let changes = Self::entity_to_changeset(anime);
+        let anime_clone = anime.clone();
 
-        let new_anime = NewAnime {
-            id: anime.id,
-            mal_id: anime.mal_id,
-            title: anime.title.clone(),
-            title_english: anime.title_english.clone(),
-            title_japanese: anime.title_japanese.clone(),
-            score: anime.score,
-            scored_by: anime.scored_by,
-            rank: anime.rank,
-            popularity: anime.popularity,
-            members: anime.members,
-            favorites: anime.favorites,
-            synopsis: anime.synopsis.clone(),
-            episodes: anime.episodes,
-            status: anime.status.to_string(),
-            aired_from: anime.aired.from,
-            aired_to: anime.aired.to,
-            anime_type: anime.anime_type.to_string(),
-            rating: anime.rating.clone(),
-            source: anime.source.clone(),
-            duration: anime.duration.clone(),
-            image_url: anime.image_url.clone(),
-            mal_url: anime.mal_url.clone(),
-            composite_score: anime.composite_score,
-        };
-
-        let changes = AnimeChangeset {
-            mal_id: anime.mal_id,
-            title: anime.title.clone(),
-            title_english: anime.title_english.clone(),
-            title_japanese: anime.title_japanese.clone(),
-            score: anime.score,
-            scored_by: anime.scored_by,
-            rank: anime.rank,
-            popularity: anime.popularity,
-            members: anime.members,
-            favorites: anime.favorites,
-            synopsis: anime.synopsis.clone(),
-            episodes: anime.episodes,
-            status: anime.status.to_string(),
-            aired_from: anime.aired.from,
-            aired_to: anime.aired.to,
-            anime_type: anime.anime_type.to_string(),
-            rating: anime.rating.clone(),
-            source: anime.source.clone(),
-            duration: anime.duration.clone(),
-            image_url: anime.image_url.clone(),
-            mal_url: anime.mal_url.clone(),
-            composite_score: anime.composite_score,
-            updated_at: chrono::Utc::now(),
-        };
-
-        task::spawn_blocking(move || -> AppResult<AnimeModel> {
+        task::spawn_blocking(move || -> AppResult<Anime> {
             let mut conn = db.get_connection()?;
 
-            let saved = diesel::insert_into(anime::table)
-                .values(&new_anime)
-                .on_conflict(anime::mal_id)
-                .do_update()
-                .set(&changes)
-                .get_result::<AnimeModel>(&mut conn)?;
+            conn.transaction::<Anime, AppError, _>(|conn| {
+                // First, check if anime already exists by external ID
+                let existing_anime_id = {
+                    use crate::infrastructure::database::schema::anime_external_ids;
 
-            Ok(saved)
+                    // Get primary external ID, handle case where it might not be set or be "0"
+                    if let Some(primary_external_id) = anime_clone
+                        .provider_metadata
+                        .get_external_id(&anime_clone.provider_metadata.primary_provider)
+                    {
+                        // Skip if external ID is "0" or empty (invalid)
+                        if primary_external_id.is_empty() || primary_external_id == "0" {
+                            None
+                        } else {
+                            let provider_code = match anime_clone.provider_metadata.primary_provider
+                            {
+                                AnimeProvider::Jikan => "jikan",
+                                AnimeProvider::AniList => "anilist",
+                                AnimeProvider::Kitsu => "kitsu",
+                                AnimeProvider::TMDB => "tmdb",
+                                AnimeProvider::AniDB => "anidb",
+                            };
+
+                            anime_external_ids::table
+                                .filter(anime_external_ids::provider_code.eq(provider_code))
+                                .filter(anime_external_ids::external_id.eq(primary_external_id))
+                                .select(anime_external_ids::anime_id)
+                                .first::<Uuid>(conn)
+                                .optional()?
+                        }
+                    } else {
+                        None
+                    }
+                };
+
+                let saved_anime = if let Some(existing_id) = existing_anime_id {
+                    // Update existing anime
+                    diesel::update(anime::table.filter(anime::id.eq(existing_id)))
+                        .set(&changes)
+                        .get_result::<Anime>(conn)?
+                } else {
+                    // Insert new anime
+                    diesel::insert_into(anime::table)
+                        .values(&new_anime)
+                        .get_result::<Anime>(conn)?
+                };
+
+                // Update external IDs if they exist and are valid
+                if anime_clone
+                    .provider_metadata
+                    .external_ids
+                    .iter()
+                    .any(|(_, id)| !id.is_empty() && id != "0")
+                {
+                    Self::upsert_external_ids_blocking(
+                        conn,
+                        saved_anime.id,
+                        &anime_clone.provider_metadata,
+                    )?;
+                }
+
+                Ok(saved_anime)
+            })
         })
-        .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))?
+        .await?
+    }
+
+    fn upsert_external_ids_blocking(
+        conn: &mut diesel::PgConnection,
+        anime_id: Uuid,
+        provider_metadata: &ProviderMetadata,
+    ) -> AppResult<()> {
+        use crate::infrastructure::database::schema::anime_external_ids;
+        use diesel::prelude::*;
+
+        // Insert or update external IDs
+        for (provider, external_id) in &provider_metadata.external_ids {
+            // Skip invalid external IDs
+            if external_id.is_empty() || external_id == "0" {
+                continue;
+            }
+
+            let provider_code = match provider {
+                AnimeProvider::Jikan => "jikan",
+                AnimeProvider::AniList => "anilist",
+                AnimeProvider::Kitsu => "kitsu",
+                AnimeProvider::TMDB => "tmdb",
+                AnimeProvider::AniDB => "anidb",
+            };
+
+            let is_primary = provider == &provider_metadata.primary_provider;
+
+            diesel::insert_into(anime_external_ids::table)
+                .values((
+                    anime_external_ids::anime_id.eq(anime_id),
+                    anime_external_ids::provider_code.eq(provider_code),
+                    anime_external_ids::external_id.eq(external_id),
+                    anime_external_ids::is_primary.eq(is_primary),
+                ))
+                .on_conflict((
+                    anime_external_ids::anime_id,
+                    anime_external_ids::provider_code,
+                ))
+                .do_update()
+                .set((
+                    anime_external_ids::external_id.eq(external_id),
+                    anime_external_ids::is_primary.eq(is_primary),
+                    anime_external_ids::last_synced.eq(chrono::Utc::now()),
+                ))
+                .execute(conn)?;
+        }
+
+        Ok(())
     }
 
     async fn upsert_genres(&self, anime_id: Uuid, genres_in: &[Genre]) -> AppResult<()> {
         let db = Arc::clone(&self.db);
-        let genres_vec = genres_in.to_vec();
+        // Create owned vector for closure, but more efficiently
+        let genres = Vec::from(genres_in);
 
         task::spawn_blocking(move || -> AppResult<()> {
             let mut conn = db.get_connection()?;
@@ -531,43 +705,72 @@ impl AnimeRepositoryImpl {
                 diesel::delete(anime_genres::table.filter(anime_genres::anime_id.eq(anime_id)))
                     .execute(conn)?;
 
-                for g in genres_vec {
+                for g in genres {
+                    println!("DEBUG: Processing genre: {}", g.name);
+
                     let new_g = NewGenre {
                         id: g.id,
-                        mal_id: g.mal_id,
                         name: g.name.clone(),
                     };
 
-                    let genre_id = if g.mal_id > 0 {
-                        diesel::insert_into(genres::table)
-                            .values(&new_g)
-                            .on_conflict(genres::mal_id)
-                            .do_update()
-                            .set(genres::name.eq(&g.name))
-                            .returning(genres::id)
-                            .get_result::<Uuid>(conn)?
-                    } else {
-                        diesel::insert_into(genres::table)
-                            .values(&new_g)
-                            .on_conflict_do_nothing()
-                            .execute(conn)?;
-                        genres::table
-                            .filter(genres::name.eq(&g.name))
-                            .select(genres::id)
-                            .first::<Uuid>(conn)?
+                    // Use name-based conflict resolution with better error handling
+                    let genre_id = match diesel::insert_into(genres::table)
+                        .values(&new_g)
+                        .on_conflict(genres::name)
+                        .do_update()
+                        .set(genres::name.eq(&g.name))
+                        .returning(genres::id)
+                        .get_result::<Uuid>(conn)
+                    {
+                        Ok(id) => {
+                            println!("DEBUG: Successfully upserted genre: {} (ID: {})", g.name, id);
+                            id
+                        }
+                        Err(e) => {
+                            println!("DEBUG: Genre upsert failed, trying fallback for '{}': {}", g.name, e);
+                            // Fallback: find existing genre by name
+                            match genres::table
+                                .filter(genres::name.eq(&g.name))
+                                .select(genres::id)
+                                .first::<Uuid>(conn)
+                            {
+                                Ok(existing_id) => {
+                                    println!("DEBUG: Found existing genre: {} (ID: {})", g.name, existing_id);
+                                    existing_id
+                                }
+                                Err(find_err) => {
+                                    println!("DEBUG: Failed to find genre '{}': {}", g.name, find_err);
+                                    return Err(AppError::DatabaseError(format!(
+                                        "Failed to upsert genre '{}': insert failed: {}, find failed: {}",
+                                        g.name, e, find_err
+                                    )));
+                                }
+                            }
+                        }
                     };
 
-                    diesel::insert_into(anime_genres::table)
+                    match diesel::insert_into(anime_genres::table)
                         .values(NewAnimeGenre { anime_id, genre_id })
                         .on_conflict_do_nothing()
-                        .execute(conn)?;
+                        .execute(conn)
+                    {
+                        Ok(rows_affected) => {
+                            println!("DEBUG: Associated genre {} with anime (rows affected: {})", g.name, rows_affected);
+                        }
+                        Err(e) => {
+                            println!("DEBUG: Failed to associate genre {} with anime: {}", g.name, e);
+                            return Err(AppError::DatabaseError(format!(
+                                "Failed to associate genre '{}' with anime: {}", g.name, e
+                            )));
+                        }
+                    }
                 }
 
                 Ok(())
             })
         })
         .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))?
+        ?
     }
 
     async fn upsert_studios(&self, anime_id: Uuid, studio_names: &[String]) -> AppResult<()> {
@@ -614,8 +817,7 @@ impl AnimeRepositoryImpl {
                 Ok(())
             })
         })
-        .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))?
+        .await?
     }
 
     async fn upsert_quality_metrics(
@@ -655,7 +857,6 @@ impl AnimeRepositoryImpl {
 
             Ok(())
         })
-        .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))?
+        .await?
     }
 }

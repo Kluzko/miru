@@ -17,6 +17,8 @@ pub struct CollectionModel {
     pub description: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub user_id: Option<String>,
+    pub is_public: Option<bool>,
 }
 
 // For inserting new collections
@@ -42,10 +44,10 @@ pub struct CollectionChangeset {
 // For reading with associations
 #[derive(Queryable, Identifiable, Associations, Debug, Clone)]
 #[diesel(belongs_to(CollectionModel, foreign_key = collection_id))]
-#[diesel(belongs_to(crate::infrastructure::database::models::AnimeModel, foreign_key = anime_id))]
+#[diesel(belongs_to(crate::infrastructure::database::models::Anime, foreign_key = anime_id))]
 #[diesel(table_name = collection_anime)]
 #[diesel(primary_key(collection_id, anime_id))]
-pub struct CollectionAnimeModel {
+pub struct CollectionAnime {
     pub collection_id: Uuid,
     pub anime_id: Uuid,
     pub added_at: DateTime<Utc>,

@@ -3,11 +3,20 @@ import type { Anime } from "@/types";
 
 export type SortBy = "rating" | "year" | "title" | "popularity" | "episodes";
 export type SortOrder = "asc" | "desc";
-export type GroupBy = "none" | "letter" | "year" | "rating" | "genre" | "status";
+export type GroupBy =
+  | "none"
+  | "letter"
+  | "year"
+  | "rating"
+  | "genre"
+  | "status";
 
 export function useAnimeFilters(animes: Anime[]) {
-  const [genreFilter, setGenreFilter] = useState<string>("all");
-  const [yearFilter, setYearFilter] = useState<string>("all");
+  const [genreFilters, setGenreFilters] = useState<string[]>([]);
+  const [yearRange, setYearRange] = useState<[number, number]>([
+    1950,
+    new Date().getFullYear(),
+  ]);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<SortBy>("rating");
@@ -15,52 +24,89 @@ export function useAnimeFilters(animes: Anime[]) {
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
 
-  const addQuickFilter = useCallback((type: string, value: string) => {
-    const filterText = `${type}:${value}`;
-    if (!activeFilters.includes(filterText)) {
-      setActiveFilters((prev) => [...prev, filterText]);
-
-      switch (type) {
-        case "genre":
-          setGenreFilter(value);
-          break;
-        case "year":
-          setYearFilter(value);
-          break;
-        case "status":
-          setStatusFilter(value);
-          break;
-        case "type":
-          setTypeFilter(value);
-          break;
-      }
-    }
-  }, [activeFilters]);
-
-  const removeFilter = useCallback((filterToRemove: string) => {
-    setActiveFilters((prev) => prev.filter((f) => f !== filterToRemove));
-    const [type] = filterToRemove.split(":");
-
-    switch (type) {
-      case "genre":
-        setGenreFilter("all");
-        break;
-      case "year":
-        setYearFilter("all");
-        break;
-      case "status":
-        setStatusFilter("all");
-        break;
-      case "type":
-        setTypeFilter("all");
-        break;
+  // Keep backward compatibility with single genre filter
+  const genreFilter =
+    genreFilters.length === 1
+      ? genreFilters[0]
+      : genreFilters.length > 1
+        ? "multiple"
+        : "all";
+  const setGenreFilter = useCallback((genre: string) => {
+    if (genre === "all") {
+      setGenreFilters([]);
+    } else {
+      setGenreFilters([genre]);
     }
   }, []);
 
+  // Keep backward compatibility with single year filter
+  const yearFilter =
+    yearRange[0] === 1950 && yearRange[1] === new Date().getFullYear()
+      ? "all"
+      : yearRange.toString();
+  const setYearFilter = useCallback((year: string) => {
+    if (year === "all") {
+      setYearRange([1950, new Date().getFullYear()]);
+    } else {
+      const yearNum = parseInt(year);
+      setYearRange([yearNum, yearNum]);
+    }
+  }, []);
+
+  const addQuickFilter = useCallback(
+    (type: string, value: string) => {
+      const filterText = `${type}:${value}`;
+      if (!activeFilters.includes(filterText)) {
+        setActiveFilters((prev) => [...prev, filterText]);
+
+        switch (type) {
+          case "genre":
+            setGenreFilters((prev) =>
+              prev.includes(value) ? prev : [...prev, value],
+            );
+            break;
+          case "year":
+            setYearFilter(value);
+            break;
+          case "status":
+            setStatusFilter(value);
+            break;
+          case "type":
+            setTypeFilter(value);
+            break;
+        }
+      }
+    },
+    [activeFilters],
+  );
+
+  const removeFilter = useCallback(
+    (filterToRemove: string) => {
+      setActiveFilters((prev) => prev.filter((f) => f !== filterToRemove));
+      const [type, value] = filterToRemove.split(":");
+
+      switch (type) {
+        case "genre":
+          setGenreFilters((prev) => prev.filter((g) => g !== value));
+          break;
+        case "year":
+          setYearFilter("all");
+          break;
+        case "status":
+          setStatusFilter("all");
+          break;
+        case "type":
+          setTypeFilter("all");
+          break;
+      }
+    },
+    [setYearFilter],
+  );
+
   const clearAllFilters = useCallback(() => {
     setActiveFilters([]);
-    setGenreFilter("all");
-    setYearFilter("all");
+    setGenreFilters([]);
+    setYearRange([1950, new Date().getFullYear()]);
     setStatusFilter("all");
     setTypeFilter("all");
   }, []);
@@ -68,7 +114,7 @@ export function useAnimeFilters(animes: Anime[]) {
   const uniqueGenres = useMemo(() => {
     const genres = new Set<string>();
     animes.forEach((anime) =>
-      anime.genres.forEach((genre) => genres.add(genre.name))
+      anime.genres.forEach((genre) => genres.add(genre.name)),
     );
     return Array.from(genres).sort();
   }, [animes]);
@@ -99,8 +145,12 @@ export function useAnimeFilters(animes: Anime[]) {
   return {
     genreFilter,
     setGenreFilter,
+    genreFilters,
+    setGenreFilters,
     yearFilter,
     setYearFilter,
+    yearRange,
+    setYearRange,
     statusFilter,
     setStatusFilter,
     typeFilter,

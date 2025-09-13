@@ -9,16 +9,19 @@ use tokio::task;
 use uuid::Uuid;
 
 use crate::domain::{
-    entities::{Anime, Collection, CollectionAnime, Genre},
+    entities::{
+        anime_detailed::{AiredDates, AnimeDetailed},
+        Collection, CollectionAnime, Genre,
+    },
     repositories::CollectionRepository,
-    value_objects::{AnimeTier, QualityMetrics},
+    value_objects::{AnimeProvider, AnimeTitle, ProviderMetadata, QualityMetrics},
 };
 use crate::infrastructure::database::{
     connection::Database,
     models::{
-        AnimeGenre, AnimeModel, AnimeStudio, CollectionAnimeChangeset, CollectionAnimeModel,
-        CollectionChangeset, CollectionModel, GenreModel, NewCollection, NewCollectionAnime,
-        QualityMetricsModel, StudioModel,
+        Anime, AnimeGenre, AnimeStudio, CollectionAnime as CollectionAnimeModel,
+        CollectionAnimeChangeset, CollectionChangeset, CollectionModel, GenreModel, NewCollection,
+        NewCollectionAnime, QualityMetricsModel, StudioModel,
     },
     // Keep schema imports minimal; only what we actually reference here.
     schema::{anime, anime_genres, anime_studios, collection_anime, collections, genres, studios},
@@ -32,6 +35,71 @@ pub struct CollectionRepositoryImpl {
 impl CollectionRepositoryImpl {
     pub fn new(db: Arc<Database>) -> Self {
         Self { db }
+    }
+
+    // Helper: Convert Anime to AnimeDetailed (same as in anime repository)
+    fn model_to_entity(
+        model: Anime,
+        genres: Vec<Genre>,
+        studios: Vec<String>,
+        quality_metrics: Option<QualityMetrics>,
+    ) -> AnimeDetailed {
+        // Create AnimeTitle from database fields
+        let mut title = AnimeTitle::with_variants(
+            model.title_main,
+            model.title_english,
+            model.title_japanese,
+            model.title_romaji,
+        );
+
+        // Set native title and synonyms
+        title.native = model.title_native;
+        title.synonyms = model
+            .title_synonyms
+            .and_then(|v| serde_json::from_value::<Vec<String>>(v).ok())
+            .unwrap_or_default();
+
+        // Create ProviderMetadata - we'll populate from external_ids table later
+        // For now, create minimal metadata with Jikan as default
+        let provider_metadata = ProviderMetadata::new(
+            AnimeProvider::Jikan, // Default provider
+            "0".to_string(),      // Will be populated from external_ids table
+        );
+
+        AnimeDetailed {
+            id: model.id,
+            title,
+            provider_metadata,
+            score: model.score,
+            scored_by: model.scored_by.map(|v| v as u32),
+            rank: model.rank.map(|v| v as u32),
+            popularity: model.popularity.map(|v| v as u32),
+            members: model.members.map(|v| v as u32),
+            favorites: model.favorites.map(|v| v as u32),
+            synopsis: model.synopsis,
+            episodes: model.episodes.map(|v| v as u16),
+            status: model.status,
+            aired: AiredDates {
+                from: model.aired_from,
+                to: model.aired_to,
+            },
+            anime_type: model.anime_type,
+            age_restriction: model.age_restriction,
+            genres,
+            studios,
+            source: model.source,
+            duration: model.duration,
+            image_url: model.image_url,
+            banner_image: model.banner_image,
+            trailer_url: model.trailer_url,
+            composite_score: model.composite_score,
+            tier: model.tier,
+            quality_metrics: quality_metrics.unwrap_or_default(),
+            // episodes_list: Vec::new(), // Removed - field deleted
+            // relations: Vec::new(),     // Removed - field deleted
+            created_at: model.created_at,
+            updated_at: model.updated_at,
+        }
     }
 }
 
@@ -54,7 +122,7 @@ impl CollectionRepository for CollectionRepositoryImpl {
             Ok(m)
         })
         .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))??;
+        ??;
 
         match model {
             Some(m) => {
@@ -87,7 +155,7 @@ impl CollectionRepository for CollectionRepositoryImpl {
             Ok(m)
         })
         .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))??;
+        ??;
 
         match model {
             Some(m) => {
@@ -109,7 +177,7 @@ impl CollectionRepository for CollectionRepositoryImpl {
             Ok(rows)
         })
         .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))??;
+        ??;
 
         self.load_collections_with_anime_ids(models).await
     }
@@ -148,7 +216,7 @@ impl CollectionRepository for CollectionRepositoryImpl {
             Ok(())
         })
         .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))?
+        ?
     }
 
     async fn add_anime_to_collection(
@@ -182,7 +250,7 @@ impl CollectionRepository for CollectionRepositoryImpl {
             Ok(())
         })
         .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))?
+        ?
     }
 
     async fn remove_anime_from_collection(
@@ -210,14 +278,14 @@ impl CollectionRepository for CollectionRepositoryImpl {
             Ok(())
         })
         .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))?
+        ?
     }
 
-    async fn get_collection_anime(&self, collection_id: &Uuid) -> AppResult<Vec<Anime>> {
+    async fn get_collection_anime(&self, collection_id: &Uuid) -> AppResult<Vec<AnimeDetailed>> {
         let db = Arc::clone(&self.db);
         let collection_id = *collection_id;
 
-        let anime_models = task::spawn_blocking(move || -> AppResult<Vec<AnimeModel>> {
+        let anime_models = task::spawn_blocking(move || -> AppResult<Vec<Anime>> {
             let mut conn = db.get_connection()?;
 
             // join + select only anime columns; maintain ordering by added_at
@@ -226,11 +294,11 @@ impl CollectionRepository for CollectionRepositoryImpl {
                 .filter(collection_anime::collection_id.eq(collection_id))
                 .select(anime::all_columns)
                 .order(collection_anime::added_at.desc())
-                .load::<AnimeModel>(&mut conn)?;
+                .load::<Anime>(&mut conn)?;
             Ok(rows)
         })
         .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))??;
+        ??;
 
         self.load_anime_batch_with_relations(anime_models).await
     }
@@ -262,7 +330,7 @@ impl CollectionRepository for CollectionRepositoryImpl {
             }))
         })
         .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))??;
+        ??;
 
         Ok(entry)
     }
@@ -290,7 +358,7 @@ impl CollectionRepository for CollectionRepositoryImpl {
             Ok(())
         })
         .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))?
+        ?
     }
 }
 
@@ -343,7 +411,7 @@ impl CollectionRepositoryImpl {
             Ok(out)
         })
         .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))??;
+        ??;
 
         Ok(results)
     }
@@ -351,15 +419,15 @@ impl CollectionRepositoryImpl {
     /// Eager-load Anime relations in batch (genres, studios, metrics).
     async fn load_anime_batch_with_relations(
         &self,
-        anime_models: Vec<AnimeModel>,
-    ) -> AppResult<Vec<Anime>> {
+        anime_models: Vec<Anime>,
+    ) -> AppResult<Vec<AnimeDetailed>> {
         if anime_models.is_empty() {
             return Ok(Vec::new());
         }
 
         let db = Arc::clone(&self.db);
 
-        let results = task::spawn_blocking(move || -> AppResult<Vec<Anime>> {
+        let results = task::spawn_blocking(move || -> AppResult<Vec<AnimeDetailed>> {
             let mut conn = db.get_connection()?;
 
             // GENRES
@@ -378,7 +446,6 @@ impl CollectionRepositoryImpl {
                             .into_iter()
                             .map(|(_, g)| Genre {
                                 id: g.id,
-                                mal_id: g.mal_id,
                                 name: g.name,
                             })
                             .collect(),
@@ -422,44 +489,14 @@ impl CollectionRepositoryImpl {
                         })
                         .unwrap_or_default();
 
-                    Anime {
-                        id: m.id,
-                        mal_id: m.mal_id,
-                        title: m.title,
-                        title_english: m.title_english,
-                        title_japanese: m.title_japanese,
-                        score: m.score,
-                        scored_by: m.scored_by,
-                        rank: m.rank,
-                        popularity: m.popularity,
-                        members: m.members,
-                        favorites: m.favorites,
-                        synopsis: m.synopsis,
-                        episodes: m.episodes,
-                        status: m.status.as_str().into(),
-                        aired: crate::domain::entities::AiredDates {
-                            from: m.aired_from,
-                            to: m.aired_to,
-                        },
-                        anime_type: m.anime_type.as_str().into(),
-                        rating: m.rating,
-                        genres,
-                        studios,
-                        source: m.source,
-                        duration: m.duration,
-                        image_url: m.image_url,
-                        mal_url: m.mal_url,
-                        composite_score: m.composite_score,
-                        tier: AnimeTier::new(m.composite_score),
-                        quality_metrics,
-                    }
+                    Self::model_to_entity(m, genres, studios, Some(quality_metrics))
                 })
                 .collect::<Vec<_>>();
 
             Ok(out)
         })
         .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))??;
+        ??;
 
         Ok(results)
     }
@@ -492,6 +529,6 @@ impl CollectionRepositoryImpl {
             Ok(saved)
         })
         .await
-        .map_err(|e| AppError::InternalError(format!("Task join error: {}", e)))?
+        ?
     }
 }

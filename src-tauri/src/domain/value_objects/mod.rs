@@ -1,9 +1,15 @@
-mod anime_status;
-mod anime_tier;
-mod anime_type;
-mod quality_metrics;
+mod anime;
+mod provider;
+mod season;
+mod unified_rating;
 
-pub use anime_status::AnimeStatus;
-pub use anime_tier::AnimeTier;
-pub use anime_type::AnimeType;
-pub use quality_metrics::QualityMetrics;
+// Re-export anime-specific types
+pub use anime::{AnimeStatus, AnimeTier, AnimeTitle, AnimeType, QualityMetrics};
+
+// Re-export provider types
+pub use provider::{AnimeProvider, ProviderMetadata};
+
+// Re-export other types
+#[allow(unused_imports)]
+pub use season::{BroadcastInfo, Season};
+pub use unified_rating::{AgeRestrictionInfo, UnifiedAgeRestriction};

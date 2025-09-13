@@ -50,13 +50,53 @@ impl Validator {
         Ok(())
     }
 
-    pub fn validate_mal_id(mal_id: i32) -> Result<(), AppError> {
-        if mal_id <= 0 {
+    /// Validate external ID for any provider
+    pub fn validate_external_id(
+        external_id: &str,
+        provider: &crate::domain::value_objects::AnimeProvider,
+    ) -> Result<(), AppError> {
+        if external_id.is_empty() {
             return Err(AppError::ValidationError(
-                "MAL ID must be positive".to_string(),
+                "External ID cannot be empty".to_string(),
             ));
         }
+
+        if external_id == "0" {
+            return Err(AppError::ValidationError(
+                "External ID cannot be '0'".to_string(),
+            ));
+        }
+
+        // Provider-specific validation
+        match provider {
+            crate::domain::value_objects::AnimeProvider::Jikan => {
+                // MAL IDs should be positive integers
+                if external_id.parse::<i32>().unwrap_or(-1) <= 0 {
+                    return Err(AppError::ValidationError(
+                        "Jikan (MAL) ID must be a positive integer".to_string(),
+                    ));
+                }
+            }
+            crate::domain::value_objects::AnimeProvider::AniList => {
+                // AniList IDs should be positive integers
+                if external_id.parse::<i32>().unwrap_or(-1) <= 0 {
+                    return Err(AppError::ValidationError(
+                        "AniList ID must be a positive integer".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                // For other providers, just check it's not empty or "0"
+                // Could be extended with provider-specific rules later
+            }
+        }
+
         Ok(())
+    }
+
+    /// Check if external ID is considered valid (not empty, not "0")
+    pub fn is_valid_external_id(external_id: &str) -> bool {
+        !external_id.is_empty() && external_id != "0"
     }
 
     pub fn validate_pagination(offset: i64, limit: i64) -> Result<(), AppError> {

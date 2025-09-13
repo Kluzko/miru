@@ -1,4 +1,4 @@
-use crate::domain::entities::Anime;
+use crate::domain::traits::scoreable::Scoreable;
 use crate::domain::value_objects::{AnimeTier, QualityMetrics};
 
 #[derive(Debug, Clone)]
@@ -63,7 +63,7 @@ impl ScoreCalculator {
         Self::default()
     }
 
-    pub fn calculate_composite_score(&self, anime: &Anime) -> f32 {
+    pub fn calculate_composite_score(&self, anime: &dyn Scoreable) -> f32 {
         let mut parts = Vec::new();
 
         if let Some(score) = self.bayesian_score(anime) {
@@ -103,22 +103,22 @@ impl ScoreCalculator {
         (weighted_sum / weight_sum * 100.0).round() / 100.0
     }
 
-    pub fn calculate_quality_metrics(&self, anime: &Anime) -> QualityMetrics {
+    pub fn calculate_quality_metrics(&self, anime: &dyn Scoreable) -> QualityMetrics {
         QualityMetrics {
             popularity_score: self.popularity_score(anime).unwrap_or(0.0),
             engagement_score: self.engagement_score(anime).unwrap_or(0.0),
-            consistency_score: anime.score.unwrap_or(0.0),
+            consistency_score: anime.score().unwrap_or(0.0),
             audience_reach_score: self.audience_reach_score(anime).unwrap_or(0.0),
         }
     }
 
     pub fn determine_tier(&self, score: f32) -> AnimeTier {
-        AnimeTier::new(score)
+        AnimeTier::from_score(score)
     }
 
-    fn bayesian_score(&self, anime: &Anime) -> Option<f32> {
-        let r = anime.score?;
-        let v = anime.scored_by? as f32;
+    fn bayesian_score(&self, anime: &dyn Scoreable) -> Option<f32> {
+        let r = anime.score()?;
+        let v = anime.scored_by()? as f32;
         if v <= 0.0 {
             return None;
         }
@@ -129,14 +129,14 @@ impl ScoreCalculator {
         Some(self.clamp(b, 0.0, 10.0))
     }
 
-    fn popularity_score(&self, anime: &Anime) -> Option<f32> {
-        if let Some(popularity) = anime.popularity {
+    fn popularity_score(&self, anime: &dyn Scoreable) -> Option<f32> {
+        if let Some(popularity) = anime.popularity() {
             let rank = self.clamp(popularity as f32, 1.0, self.context.total_titles);
             let pct = 1.0 - (rank - 1.0) / (self.context.total_titles - 1.0);
             return Some(self.clamp(pct * 10.0, 0.0, 10.0));
         }
 
-        if let Some(members) = anime.members {
+        if let Some(members) = anime.members() {
             if members > 0 {
                 return Some(self.normalize_log(members as f32, self.context.max_members) * 10.0);
             }
@@ -145,17 +145,17 @@ impl ScoreCalculator {
         None
     }
 
-    fn audience_reach_score(&self, anime: &Anime) -> Option<f32> {
-        let members = anime.members? as f32;
+    fn audience_reach_score(&self, anime: &dyn Scoreable) -> Option<f32> {
+        let members = anime.members()? as f32;
         if members <= 0.0 {
             return None;
         }
         Some(self.normalize_log(members, self.context.max_members) * 10.0)
     }
 
-    fn favorites_intensity(&self, anime: &Anime) -> Option<f32> {
-        let f = anime.favorites? as f32;
-        let n = anime.members? as f32;
+    fn favorites_intensity(&self, anime: &dyn Scoreable) -> Option<f32> {
+        let f = anime.favorites()? as f32;
+        let n = anime.members()? as f32;
         if n <= 0.0 {
             return None;
         }
@@ -164,9 +164,9 @@ impl ScoreCalculator {
         Some(self.clamp((lb / 0.05) * 10.0, 0.0, 10.0))
     }
 
-    fn engagement_score(&self, anime: &Anime) -> Option<f32> {
-        let v = anime.scored_by? as f32;
-        let n = anime.members? as f32;
+    fn engagement_score(&self, anime: &dyn Scoreable) -> Option<f32> {
+        let v = anime.scored_by()? as f32;
+        let n = anime.members()? as f32;
         if n <= 0.0 {
             return None;
         }
@@ -175,8 +175,8 @@ impl ScoreCalculator {
         Some(self.clamp(lb * 10.0, 0.0, 10.0))
     }
 
-    fn momentum_score(&self, anime: &Anime) -> Option<f32> {
-        let from = anime.aired.from?;
+    fn momentum_score(&self, anime: &dyn Scoreable) -> Option<f32> {
+        let from = anime.aired_from()?;
         let days = (chrono::Utc::now() - from).num_days() as f32;
 
         if days < 0.0 || days > 365.0 {
@@ -184,9 +184,9 @@ impl ScoreCalculator {
         }
 
         let days = days.max(1.0);
-        let m = anime.members.unwrap_or(0) as f32;
-        let f = anime.favorites.unwrap_or(0) as f32;
-        let v = anime.scored_by.unwrap_or(0) as f32;
+        let m = anime.members().unwrap_or(0) as f32;
+        let f = anime.favorites().unwrap_or(0) as f32;
+        let v = anime.scored_by().unwrap_or(0) as f32;
 
         let members_per_day = m / days;
         let favorites_per_day = f / days;
@@ -200,8 +200,8 @@ impl ScoreCalculator {
         Some(self.clamp(score01 * 10.0, 0.0, 10.0))
     }
 
-    fn momentum_weight(&self, anime: &Anime) -> f32 {
-        let from = match anime.aired.from {
+    fn momentum_weight(&self, anime: &dyn Scoreable) -> f32 {
+        let from = match anime.aired_from() {
             Some(date) => date,
             None => return 0.0,
         };
@@ -212,7 +212,7 @@ impl ScoreCalculator {
         }
 
         let freshness = self.half_life_decay(days, self.context.recency_half_life_days);
-        let votes = anime.scored_by.unwrap_or(0) as f32;
+        let votes = anime.scored_by().unwrap_or(0) as f32;
         let reliability = self.clamp(votes / self.context.vote_reliability_threshold, 0.0, 1.0);
 
         self.max_momentum_weight * freshness * (1.0 - reliability)

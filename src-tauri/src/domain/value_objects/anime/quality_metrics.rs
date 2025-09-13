@@ -11,6 +11,8 @@ pub struct QualityMetrics {
 }
 
 impl QualityMetrics {
+    /// Create new quality metrics with validated scores (0.0-10.0)
+    #[allow(dead_code)]
     pub fn new(
         popularity_score: f32,
         engagement_score: f32,
@@ -25,6 +27,8 @@ impl QualityMetrics {
         }
     }
 
+    /// Calculate the average score across all metrics
+    #[allow(dead_code)]
     pub fn average_score(&self) -> f32 {
         (self.popularity_score
             + self.engagement_score
@@ -33,10 +37,14 @@ impl QualityMetrics {
             / 4.0
     }
 
+    /// Determine if this anime is considered high quality (average >= 7.0)
+    #[allow(dead_code)]
     pub fn is_high_quality(&self) -> bool {
         self.average_score() >= 7.0
     }
 
+    /// Get the strongest performing metric
+    #[allow(dead_code)]
     pub fn strongest_metric(&self) -> (&str, f32) {
         let metrics = [
             ("popularity", self.popularity_score),
@@ -51,6 +59,8 @@ impl QualityMetrics {
             .unwrap()
     }
 
+    /// Get the weakest performing metric
+    #[allow(dead_code)]
     pub fn weakest_metric(&self) -> (&str, f32) {
         let metrics = [
             ("popularity", self.popularity_score),
@@ -65,6 +75,8 @@ impl QualityMetrics {
             .unwrap()
     }
 
+    /// Clamp score to valid range (0.0-10.0)
+    #[allow(dead_code)]
     fn clamp_score(score: f32) -> f32 {
         score.max(0.0).min(10.0)
     }

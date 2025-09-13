@@ -3,7 +3,10 @@ use specta::Type;
 use std::fmt;
 use std::str::FromStr;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(
+    diesel_derive_enum::DbEnum, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type,
+)]
+#[ExistingTypePath = "crate::infrastructure::database::schema::sql_types::AnimeType"]
 pub enum AnimeType {
     TV,
     Movie,

@@ -1,4 +1,4 @@
-use crate::domain::entities::{Anime, Collection, CollectionAnime};
+use crate::domain::entities::{AnimeDetailed, Collection, CollectionAnime};
 use crate::shared::errors::AppResult;
 use async_trait::async_trait;
 use uuid::Uuid;
@@ -27,7 +27,7 @@ pub trait CollectionRepository: Send + Sync {
         anime_id: &Uuid,
     ) -> AppResult<()>;
 
-    async fn get_collection_anime(&self, collection_id: &Uuid) -> AppResult<Vec<Anime>>;
+    async fn get_collection_anime(&self, collection_id: &Uuid) -> AppResult<Vec<AnimeDetailed>>;
 
     async fn get_collection_entry(
         &self,

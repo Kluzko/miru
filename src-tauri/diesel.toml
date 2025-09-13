@@ -3,7 +3,7 @@
 
 [print_schema]
 file = "src/infrastructure/database/schema.rs"
-custom_type_derives = ["diesel::query_builder::QueryId", "Clone"]
+custom_type_derives = ["diesel::query_builder::QueryId"]
 
 [migrations_directory]
 dir = "/Users/jakubkluzniak/dev/miru/src-tauri/src/infrastructure/database/migrations"
