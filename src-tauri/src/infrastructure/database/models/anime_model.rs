@@ -39,9 +39,7 @@ pub struct AnimeMedium {
     pub title_romaji: Option<String>,
     pub title_native: Option<String>,
     pub score: Option<f32>,
-    pub scored_by: Option<i32>,
-    pub rank: Option<i32>,
-    pub popularity: Option<i32>,
+    pub favorites: Option<i32>,
     pub synopsis: Option<String>,
     pub episodes: Option<i32>,
     pub status: AnimeStatus,
@@ -51,6 +49,7 @@ pub struct AnimeMedium {
     pub tier: AnimeTier,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub last_synced_at: Option<DateTime<Utc>>,
 }
 
 /// Main anime database model
@@ -61,10 +60,6 @@ pub struct Anime {
     pub title_english: Option<String>,
     pub title_japanese: Option<String>,
     pub score: Option<f32>,
-    pub scored_by: Option<i32>,
-    pub rank: Option<i32>,
-    pub popularity: Option<i32>,
-    pub members: Option<i32>,
     pub favorites: Option<i32>,
     pub synopsis: Option<String>,
     pub episodes: Option<i32>,
@@ -86,7 +81,8 @@ pub struct Anime {
     pub quality_metrics: Option<serde_json::Value>,
     pub status: AnimeStatus,
     pub anime_type: AnimeType,
-    pub age_restriction: Option<UnifiedAgeRestriction>, // Must be last to match schema
+    pub age_restriction: Option<UnifiedAgeRestriction>,
+    pub last_synced_at: Option<DateTime<Utc>>, // Must be last to match schema
 }
 
 /// Insert payload (write)
@@ -97,10 +93,6 @@ pub struct NewAnime {
     pub title_english: Option<String>,
     pub title_japanese: Option<String>,
     pub score: Option<f32>,
-    pub scored_by: Option<i32>,
-    pub rank: Option<i32>,
-    pub popularity: Option<i32>,
-    pub members: Option<i32>,
     pub favorites: Option<i32>,
     pub synopsis: Option<String>,
     pub episodes: Option<i32>,
@@ -120,7 +112,8 @@ pub struct NewAnime {
     pub quality_metrics: Option<serde_json::Value>,
     pub status: AnimeStatus,
     pub anime_type: AnimeType,
-    pub age_restriction: Option<UnifiedAgeRestriction>, // Must be last to match schema
+    pub age_restriction: Option<UnifiedAgeRestriction>,
+    pub last_synced_at: Option<DateTime<Utc>>, // Must be last to match schema
 }
 
 /// Update payload (write) — excludes `id` and `created_at`
@@ -130,10 +123,6 @@ pub struct AnimeChangeset {
     pub title_english: Option<String>,
     pub title_japanese: Option<String>,
     pub score: Option<f32>,
-    pub scored_by: Option<i32>,
-    pub rank: Option<i32>,
-    pub popularity: Option<i32>,
-    pub members: Option<i32>,
     pub favorites: Option<i32>,
     pub synopsis: Option<String>,
     pub episodes: Option<i32>,
@@ -154,7 +143,8 @@ pub struct AnimeChangeset {
     pub quality_metrics: Option<serde_json::Value>,
     pub status: AnimeStatus,
     pub anime_type: AnimeType,
-    pub age_restriction: Option<UnifiedAgeRestriction>, // Must be last to match schema
+    pub age_restriction: Option<UnifiedAgeRestriction>,
+    pub last_synced_at: Option<DateTime<Utc>>, // Must be last to match schema
 }
 
 // ================== GENRE MODELS ==================

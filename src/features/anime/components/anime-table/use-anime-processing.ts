@@ -10,6 +10,8 @@ interface ProcessingOptions {
   yearRange?: [number, number]; // New range support
   statusFilter: string;
   typeFilter: string;
+  ageRestrictionFilter: string;
+  scoreRange: [number, number];
   sortBy: SortBy;
   sortOrder: SortOrder;
   groupBy: GroupBy;
@@ -93,7 +95,25 @@ export function useAnimeProcessing(
       const matchesType =
         typeFilter === "all" || anime.animeType === typeFilter;
 
-      return matchesGenre && matchesYear && matchesStatus && matchesType;
+      // Age restriction filter
+      const matchesAgeRestriction =
+        options.ageRestrictionFilter === "all" ||
+        anime.ageRestriction === options.ageRestrictionFilter;
+
+      // Score filter
+      const matchesScore = (() => {
+        const score = anime.score || 0;
+        return score >= options.scoreRange[0] && score <= options.scoreRange[1];
+      })();
+
+      return (
+        matchesGenre &&
+        matchesYear &&
+        matchesStatus &&
+        matchesType &&
+        matchesAgeRestriction &&
+        matchesScore
+      );
     });
 
     // Sort animes
@@ -142,10 +162,7 @@ export function useAnimeProcessing(
             aValue = a.title.main.toLowerCase();
             bValue = b.title.main.toLowerCase();
             break;
-          case "popularity":
-            aValue = a.popularity || 999999;
-            bValue = b.popularity || 999999;
-            break;
+
           case "episodes":
             aValue = a.episodes || 0;
             bValue = b.episodes || 0;

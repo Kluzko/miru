@@ -40,10 +40,6 @@ diesel::table! {
         #[max_length = 255]
         title_japanese -> Nullable<Varchar>,
         score -> Nullable<Float4>,
-        scored_by -> Nullable<Int4>,
-        rank -> Nullable<Int4>,
-        popularity -> Nullable<Int4>,
-        members -> Nullable<Int4>,
         favorites -> Nullable<Int4>,
         synopsis -> Nullable<Text>,
         episodes -> Nullable<Int4>,
@@ -71,6 +67,7 @@ diesel::table! {
         status -> AnimeStatus,
         anime_type -> AnimeType,
         age_restriction -> Nullable<UnifiedAgeRestriction>,
+        last_synced_at -> Nullable<Timestamptz>,
     }
 }
 

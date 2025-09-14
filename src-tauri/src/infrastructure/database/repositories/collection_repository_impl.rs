@@ -71,10 +71,6 @@ impl CollectionRepositoryImpl {
             title,
             provider_metadata,
             score: model.score,
-            scored_by: model.scored_by.map(|v| v as u32),
-            rank: model.rank.map(|v| v as u32),
-            popularity: model.popularity.map(|v| v as u32),
-            members: model.members.map(|v| v as u32),
             favorites: model.favorites.map(|v| v as u32),
             synopsis: model.synopsis,
             episodes: model.episodes.map(|v| v as u16),
@@ -99,6 +95,7 @@ impl CollectionRepositoryImpl {
             // relations: Vec::new(),     // Removed - field deleted
             created_at: model.created_at,
             updated_at: model.updated_at,
+            last_synced_at: model.last_synced_at,
         }
     }
 }
@@ -121,8 +118,7 @@ impl CollectionRepository for CollectionRepositoryImpl {
                 .optional()?;
             Ok(m)
         })
-        .await
-        ??;
+        .await??;
 
         match model {
             Some(m) => {
@@ -154,8 +150,7 @@ impl CollectionRepository for CollectionRepositoryImpl {
                 .optional()?;
             Ok(m)
         })
-        .await
-        ??;
+        .await??;
 
         match model {
             Some(m) => {
@@ -176,8 +171,7 @@ impl CollectionRepository for CollectionRepositoryImpl {
                 .load::<CollectionModel>(&mut conn)?;
             Ok(rows)
         })
-        .await
-        ??;
+        .await??;
 
         self.load_collections_with_anime_ids(models).await
     }
@@ -215,8 +209,7 @@ impl CollectionRepository for CollectionRepositoryImpl {
             }
             Ok(())
         })
-        .await
-        ?
+        .await?
     }
 
     async fn add_anime_to_collection(
@@ -249,8 +242,7 @@ impl CollectionRepository for CollectionRepositoryImpl {
 
             Ok(())
         })
-        .await
-        ?
+        .await?
     }
 
     async fn remove_anime_from_collection(
@@ -277,8 +269,7 @@ impl CollectionRepository for CollectionRepositoryImpl {
             }
             Ok(())
         })
-        .await
-        ?
+        .await?
     }
 
     async fn get_collection_anime(&self, collection_id: &Uuid) -> AppResult<Vec<AnimeDetailed>> {
@@ -297,8 +288,7 @@ impl CollectionRepository for CollectionRepositoryImpl {
                 .load::<Anime>(&mut conn)?;
             Ok(rows)
         })
-        .await
-        ??;
+        .await??;
 
         self.load_anime_batch_with_relations(anime_models).await
     }
@@ -329,8 +319,7 @@ impl CollectionRepository for CollectionRepositoryImpl {
                 notes: m.notes,
             }))
         })
-        .await
-        ??;
+        .await??;
 
         Ok(entry)
     }
@@ -357,8 +346,7 @@ impl CollectionRepository for CollectionRepositoryImpl {
 
             Ok(())
         })
-        .await
-        ?
+        .await?
     }
 }
 
@@ -410,8 +398,7 @@ impl CollectionRepositoryImpl {
 
             Ok(out)
         })
-        .await
-        ??;
+        .await??;
 
         Ok(results)
     }
@@ -495,8 +482,7 @@ impl CollectionRepositoryImpl {
 
             Ok(out)
         })
-        .await
-        ??;
+        .await??;
 
         Ok(results)
     }
@@ -528,7 +514,6 @@ impl CollectionRepositoryImpl {
 
             Ok(saved)
         })
-        .await
-        ?
+        .await?
     }
 }

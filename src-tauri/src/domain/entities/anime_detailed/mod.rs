@@ -39,13 +39,9 @@ pub struct AnimeDetailed {
     // Provider metadata (external IDs, sync info, etc.)
     pub provider_metadata: ProviderMetadata,
 
-    // Scoring information (from primary provider)
+    // Scoring information (unified across providers, 0-10 scale)
     pub score: Option<f32>,
-    pub scored_by: Option<u32>,
-    pub rank: Option<u32>,
-    pub popularity: Option<u32>,
-    pub members: Option<u32>,
-    pub favorites: Option<u32>,
+    pub favorites: Option<u32>, // Used as engagement metric
 
     // Content information
     pub synopsis: Option<String>,
@@ -76,6 +72,7 @@ pub struct AnimeDetailed {
     // Timestamps
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub last_synced_at: Option<DateTime<Utc>>, // For tracking provider resync
 }
 
 // ================================================================================================
@@ -88,15 +85,18 @@ impl Scoreable for AnimeDetailed {
     }
 
     fn scored_by(&self) -> Option<i32> {
-        self.scored_by.map(|v| v as i32)
+        // Use favorites as engagement metric since we removed scored_by
+        self.favorites.map(|v| v as i32)
     }
 
     fn popularity(&self) -> Option<i32> {
-        self.popularity.map(|v| v as i32)
+        // Use internal calculation instead of external popularity
+        None
     }
 
     fn members(&self) -> Option<i32> {
-        self.members.map(|v| v as i32)
+        // Use favorites as member engagement proxy
+        self.favorites.map(|v| v as i32)
     }
 
     fn favorites(&self) -> Option<i32> {
@@ -123,10 +123,6 @@ impl AnimeDetailed {
             title: AnimeTitle::new(title),
             provider_metadata: ProviderMetadata::new(primary_provider, external_id),
             score: None,
-            scored_by: None,
-            rank: None,
-            popularity: None,
-            members: None,
             favorites: None,
             synopsis: None,
             episodes: None,
@@ -147,10 +143,9 @@ impl AnimeDetailed {
             composite_score: 0.0,
             tier: AnimeTier::default(),
             quality_metrics: QualityMetrics::default(),
-            // episodes_list: Vec::new(), // Removed - unused
-            // relations: Vec::new(), // Removed - unused
             created_at: now,
             updated_at: now,
+            last_synced_at: None,
         }
     }
 }

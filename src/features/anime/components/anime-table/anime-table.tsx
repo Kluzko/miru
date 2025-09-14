@@ -5,6 +5,8 @@ import type { Anime } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { getPreferredTitle } from "@/lib/title-utils";
+import { useSettingsStore } from "@/stores/settings-store";
 import {
   Select,
   SelectContent,
@@ -29,7 +31,7 @@ import {
   List,
   ChevronRight,
   Clock,
-  TrendingUp,
+  Heart,
   Filter,
   X,
   ChevronDown,
@@ -55,6 +57,7 @@ export function AnimeTable({
   onAnimeClick,
   onRemoveAnime,
 }: AnimeTableProps) {
+  const { preferredTitleLanguage } = useSettingsStore();
   const [viewMode, setViewMode] = useState<"detailed" | "compact">("detailed");
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [filtersExpanded, setFiltersExpanded] = useState(false);
@@ -83,6 +86,11 @@ export function AnimeTable({
     statusFilter,
     setStatusFilter,
     typeFilter,
+    setTypeFilter,
+    ageRestrictionFilter,
+    setAgeRestrictionFilter,
+    scoreRange,
+    setScoreRange,
     sortBy,
     setSortBy,
     sortOrder,
@@ -95,6 +103,7 @@ export function AnimeTable({
     clearAllFilters,
     uniqueGenres,
     uniqueStatuses,
+    uniqueAgeRestrictions,
   } = useAnimeFilters(animes);
 
   const { filteredAndSortedAnimes, groupedAnimes } = useAnimeProcessing(
@@ -107,6 +116,8 @@ export function AnimeTable({
       yearRange,
       statusFilter,
       typeFilter,
+      ageRestrictionFilter,
+      scoreRange,
       sortBy,
       sortOrder,
       groupBy,
@@ -160,6 +171,8 @@ export function AnimeTable({
   };
 
   const renderAnimeItem = (anime: Anime, index: number) => {
+    const displayTitle = getPreferredTitle(anime.title, preferredTitleLanguage);
+
     if (viewMode === "compact") {
       return (
         <div
@@ -172,7 +185,7 @@ export function AnimeTable({
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="font-medium text-foreground group-hover:text-primary transition-colors truncate">
-              {anime.title.main}
+              {displayTitle}
             </h3>
             <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
               <span>{anime.genres[0]?.name || "Unknown"}</span>
@@ -200,7 +213,8 @@ export function AnimeTable({
               </span>
             </div>
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <TrendingUp className="h-3 w-3" />#{anime.rank || "?"}
+              <Heart className="h-3 w-3" />
+              {anime.favorites?.toLocaleString() || "0"}
             </div>
           </div>
         </div>
@@ -221,7 +235,7 @@ export function AnimeTable({
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
                 <h3 className="font-semibold text-lg text-foreground group-hover:text-primary transition-colors truncate mb-1">
-                  {anime.title.main}
+                  {displayTitle}
                 </h3>
                 <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
                   {anime.synopsis}
@@ -274,12 +288,6 @@ export function AnimeTable({
                     </span>
                   )}
                 </div>
-                <div className="text-right bg-muted/50 px-3 py-1.5 rounded-lg">
-                  <div className="text-xs text-muted-foreground">Rank</div>
-                  <div className="text-sm font-medium">
-                    #{anime.rank || "?"}
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -313,39 +321,42 @@ export function AnimeTable({
                 />
                 {/* Search Suggestions */}
                 {showSuggestions && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-popover border border-border rounded-lg shadow-lg z-50">
-                    <div className="p-2 space-y-1">
-                      {searchSuggestions.map((suggestion, index) => (
-                        <button
-                          key={index}
-                          onClick={() => {
-                            handleSearch(suggestion);
-                            setShowSuggestions(false);
-                          }}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md transition-colors"
-                        >
-                          {suggestion}
-                        </button>
-                      ))}
-                    </div>
-                    {recentSearches.length > 0 && (
-                      <div className="border-t border-border p-2">
-                        <div className="text-xs text-muted-foreground mb-2 px-3">
-                          Recent searches
-                        </div>
-                        {recentSearches.slice(0, 3).map((search, index) => (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-sm z-50 overflow-hidden">
+                    {searchSuggestions.length > 0 && (
+                      <div className="py-1">
+                        {searchSuggestions.map((suggestion, index) => (
                           <button
                             key={index}
                             onClick={() => {
-                              handleSearch(search);
+                              handleSearch(suggestion);
                               setShowSuggestions(false);
                             }}
-                            className="w-full text-left px-3 py-1 text-xs text-muted-foreground hover:bg-accent rounded-md transition-colors flex items-center gap-2"
+                            className="w-full text-left px-4 py-2 text-sm hover:bg-muted/50 transition-colors border-0"
                           >
-                            <Clock className="h-3 w-3" />
-                            {search}
+                            {suggestion}
                           </button>
                         ))}
+                      </div>
+                    )}
+                    {recentSearches.length > 0 && (
+                      <div className="border-t border-border/50">
+                        <div className="px-4 py-1.5 text-xs text-muted-foreground/70 bg-muted/20">
+                          Recent
+                        </div>
+                        <div className="py-1">
+                          {recentSearches.slice(0, 2).map((search, index) => (
+                            <button
+                              key={index}
+                              onClick={() => {
+                                handleSearch(search);
+                                setShowSuggestions(false);
+                              }}
+                              className="w-full text-left px-4 py-1.5 text-sm text-muted-foreground hover:bg-muted/30 transition-colors border-0"
+                            >
+                              {search}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -501,59 +512,58 @@ export function AnimeTable({
             </div>
           </div>
 
-          {/* Filters Panel */}
+          {/* Modern Filters Panel */}
           <Collapsible open={filtersExpanded} onOpenChange={setFiltersExpanded}>
             <CollapsibleContent className="mt-3">
-              <div className="bg-card border border-border rounded-lg p-3">
-                <div className="grid grid-cols-2 md:grid-cols-12 gap-3 items-end">
-                  {/* Genres */}
-                  <div className="col-span-2 md:col-span-4">
-                    <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                      Genres
+              <div className="bg-card border border-border rounded-lg p-4 space-y-4">
+                {/* Full width range pickers */}
+                <div className="space-y-4">
+                  {/* Years Range */}
+                  <div>
+                    <label className="text-sm font-medium text-foreground mb-2 block">
+                      Release Year: {yearRange[0]} - {yearRange[1]}
                     </label>
-                    <MultiSelect
-                      options={uniqueGenres.map((genre) => ({
-                        label: genre,
-                        value: genre,
-                      }))}
-                      onValueChange={setGenreFilters}
-                      defaultValue={genreFilters}
-                      placeholder="Select genres..."
-                      variant="default"
-                      animation={0}
-                      maxCount={2}
+                    <Slider
+                      value={yearRange}
+                      onValueChange={(value) =>
+                        setYearRange(value as [number, number])
+                      }
+                      max={new Date().getFullYear()}
+                      min={1950}
+                      step={1}
+                      className="w-full"
                     />
                   </div>
 
-                  {/* Year Range */}
-                  <div className="col-span-2 md:col-span-3">
-                    <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                      Year: {yearRange[0]} - {yearRange[1]}
+                  {/* Score Range */}
+                  <div>
+                    <label className="text-sm font-medium text-foreground mb-2 block">
+                      Score: {scoreRange[0]} - {scoreRange[1]}
                     </label>
-                    <div className="px-2 py-1">
-                      <Slider
-                        value={yearRange}
-                        onValueChange={(value) =>
-                          setYearRange(value as [number, number])
-                        }
-                        max={new Date().getFullYear()}
-                        min={1950}
-                        step={1}
-                        className="w-full"
-                      />
-                    </div>
+                    <Slider
+                      value={scoreRange}
+                      onValueChange={(value) =>
+                        setScoreRange(value as [number, number])
+                      }
+                      max={10}
+                      min={0}
+                      step={0.1}
+                      className="w-full"
+                    />
                   </div>
+                </div>
 
-                  {/* Status */}
-                  <div className="col-span-1 md:col-span-2">
-                    <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                {/* 2-column grid for selects */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-foreground mb-2 block">
                       Status
                     </label>
                     <Select
                       value={statusFilter}
                       onValueChange={setStatusFilter}
                     >
-                      <SelectTrigger className="h-9 text-sm">
+                      <SelectTrigger>
                         <SelectValue placeholder="All" />
                       </SelectTrigger>
                       <SelectContent>
@@ -567,16 +577,56 @@ export function AnimeTable({
                     </Select>
                   </div>
 
-                  {/* Group By */}
-                  <div className="col-span-1 md:col-span-2">
-                    <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                      Group
+                  <div>
+                    <label className="text-sm font-medium text-foreground mb-2 block">
+                      Type
+                    </label>
+                    <Select value={typeFilter} onValueChange={setTypeFilter}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All</SelectItem>
+                        <SelectItem value="TV">TV</SelectItem>
+                        <SelectItem value="Movie">Movie</SelectItem>
+                        <SelectItem value="OVA">OVA</SelectItem>
+                        <SelectItem value="Special">Special</SelectItem>
+                        <SelectItem value="ONA">ONA</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-foreground mb-2 block">
+                      Age Rating
+                    </label>
+                    <Select
+                      value={ageRestrictionFilter}
+                      onValueChange={setAgeRestrictionFilter}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All</SelectItem>
+                        {uniqueAgeRestrictions.map((rating) => (
+                          <SelectItem key={rating} value={rating}>
+                            {rating}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-foreground mb-2 block">
+                      Group By
                     </label>
                     <Select
                       value={groupBy}
                       onValueChange={(value) => setGroupBy(value as any)}
                     >
-                      <SelectTrigger className="h-9 text-sm">
+                      <SelectTrigger>
                         <SelectValue placeholder="None" />
                       </SelectTrigger>
                       <SelectContent>
@@ -584,30 +634,53 @@ export function AnimeTable({
                         <SelectItem value="letter">Letter</SelectItem>
                         <SelectItem value="year">Decade</SelectItem>
                         <SelectItem value="rating">Rating</SelectItem>
-                        <SelectItem value="genre">Genre</SelectItem>
                         <SelectItem value="status">Status</SelectItem>
+                        <SelectItem value="genre">Genre</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-
-                  {/* Clear Button */}
-                  <div className="col-span-2 md:col-span-1 flex justify-end">
-                    {(genreFilters.length > 0 ||
-                      yearRange[0] !== 1950 ||
-                      yearRange[1] !== new Date().getFullYear() ||
-                      statusFilter !== "all" ||
-                      groupBy !== "none") && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={clearAllFilters}
-                        className="h-9 px-2 text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        Clear
-                      </Button>
-                    )}
-                  </div>
                 </div>
+
+                {/* Genres Multi-select */}
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-2 block">
+                    Genres
+                  </label>
+                  <MultiSelect
+                    options={uniqueGenres.map((genre) => ({
+                      label: genre,
+                      value: genre,
+                    }))}
+                    onValueChange={setGenreFilters}
+                    defaultValue={genreFilters}
+                    placeholder="Select genres..."
+                    variant="default"
+                    animation={0}
+                    maxCount={3}
+                  />
+                </div>
+
+                {/* Clear button */}
+                {(genreFilters.length > 0 ||
+                  yearRange[0] !== 1950 ||
+                  yearRange[1] !== new Date().getFullYear() ||
+                  scoreRange[0] !== 0 ||
+                  scoreRange[1] !== 10 ||
+                  statusFilter !== "all" ||
+                  typeFilter !== "all" ||
+                  ageRestrictionFilter !== "all" ||
+                  groupBy !== "none") && (
+                  <div className="pt-2 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={clearAllFilters}
+                      className="w-full"
+                    >
+                      Clear All Filters
+                    </Button>
+                  </div>
+                )}
               </div>
             </CollapsibleContent>
           </Collapsible>
@@ -634,9 +707,7 @@ export function AnimeTable({
                             <SelectItem value="rating">Rating</SelectItem>
                             <SelectItem value="year">Year</SelectItem>
                             <SelectItem value="title">Title</SelectItem>
-                            <SelectItem value="popularity">
-                              Popularity
-                            </SelectItem>
+
                             <SelectItem value="episodes">Episodes</SelectItem>
                           </SelectContent>
                         </Select>

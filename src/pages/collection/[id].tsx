@@ -1,11 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import {
-  AnimeGrid,
-  AnimeDetailSheet,
-  AnimeTable,
-} from "@/features/anime/components";
+import { AnimeTable } from "@/features/anime/components";
 import {
   CollectionHeader,
   ImportDialog,
@@ -17,19 +13,16 @@ import {
   useCollectionAnime,
   useRemoveAnimeFromCollection,
 } from "@/features/collection/hooks";
-import { AnimeGridSkeleton } from "@/features/anime/components/anime-skeleton";
+
 import { EmptyState } from "@/components/common/empty-state";
-import type { Anime } from "@/types";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export function CollectionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [selectedAnime, setSelectedAnime] = useState<Anime | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<"grid" | "table">("table");
 
   const { data: collection, isLoading: collectionLoading } = useCollection(id!);
   const { data: animeList = [], isLoading: animeLoading } = useCollectionAnime(
@@ -48,17 +41,11 @@ export function CollectionDetailPage() {
         onImport={() => setImportOpen(true)}
         onEdit={() => setEditOpen(true)}
         onDelete={() => setDeleteOpen(true)}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
       />
 
-      <div
-        className={
-          viewMode === "table" ? "flex-1 p-6" : "flex-1 overflow-auto p-6"
-        }
-      >
+      <div className="flex-1 p-6">
         {animeLoading ? (
-          <AnimeGridSkeleton />
+          <CollectionDetailSkeleton />
         ) : animeList.length === 0 ? (
           <EmptyState
             title="No anime in this collection"
@@ -67,7 +54,7 @@ export function CollectionDetailPage() {
               <Button onClick={() => setImportOpen(true)}>Import Anime</Button>
             }
           />
-        ) : viewMode === "table" ? (
+        ) : (
           <AnimeTable
             animes={animeList}
             onRemoveAnime={async (animeId) => {
@@ -81,25 +68,8 @@ export function CollectionDetailPage() {
               }
             }}
           />
-        ) : (
-          <AnimeGrid
-            anime={animeList}
-            onAnimeClick={(anime) => {
-              // Grid view can handle its own drawer/sheet
-              setSelectedAnime(anime);
-            }}
-          />
         )}
       </div>
-
-      {/* AnimeDetailSheet only for grid view */}
-      {viewMode === "grid" && (
-        <AnimeDetailSheet
-          anime={selectedAnime}
-          isOpen={!!selectedAnime}
-          onClose={() => setSelectedAnime(null)}
-        />
-      )}
 
       <ImportDialog
         isOpen={importOpen}
@@ -132,12 +102,23 @@ export function CollectionDetailPage() {
 
 function CollectionDetailSkeleton() {
   return (
-    <div className="p-6">
+    <div className="space-y-4">
       <div className="space-y-4 mb-6">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-4 w-96" />
       </div>
-      <AnimeGridSkeleton />
+      <div className="space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="flex items-center space-x-4">
+            <Skeleton className="h-16 w-16 rounded" />
+            <div className="space-y-2 flex-1">
+              <Skeleton className="h-4 w-1/3" />
+              <Skeleton className="h-3 w-1/2" />
+            </div>
+            <Skeleton className="h-4 w-16" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

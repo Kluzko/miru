@@ -61,15 +61,28 @@ impl AniListQueries {
                         isAdult
                         countryOfOrigin
                         studios {
-                            nodes {
-                                id
-                                name
+                            edges {
+                                isMain
+                                node {
+                                    id
+                                    name
+                                }
                             }
                         }
                         trailer {
                             id
                             site
                             thumbnail
+                        }
+                        tags {
+                            id
+                            name
+                            description
+                            category
+                            rank
+                            isGeneralSpoiler
+                            isMediaSpoiler
+                            isAdult
                         }
                     }
                 }
@@ -134,15 +147,28 @@ impl AniListQueries {
                     isAdult
                     countryOfOrigin
                     studios {
-                        nodes {
-                            id
-                            name
+                        edges {
+                            isMain
+                            node {
+                                id
+                                name
+                            }
                         }
                     }
                     trailer {
                         id
                         site
                         thumbnail
+                    }
+                    tags {
+                        id
+                        name
+                        description
+                        category
+                        rank
+                        isGeneralSpoiler
+                        isMediaSpoiler
+                        isAdult
                     }
                 }
             }

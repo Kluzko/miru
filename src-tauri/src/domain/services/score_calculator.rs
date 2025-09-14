@@ -130,49 +130,63 @@ impl ScoreCalculator {
     }
 
     fn popularity_score(&self, anime: &dyn Scoreable) -> Option<f32> {
-        if let Some(popularity) = anime.popularity() {
-            let rank = self.clamp(popularity as f32, 1.0, self.context.total_titles);
-            let pct = 1.0 - (rank - 1.0) / (self.context.total_titles - 1.0);
-            return Some(self.clamp(pct * 10.0, 0.0, 10.0));
-        }
+        // Use internal calculation based on intrinsic factors
+        // No longer dependent on external API popularity rankings
 
-        if let Some(members) = anime.members() {
-            if members > 0 {
-                return Some(self.normalize_log(members as f32, self.context.max_members) * 10.0);
-            }
-        }
+        let recency_score = self.recency_score(anime).unwrap_or(0.5);
+        let quality_score = anime.score().unwrap_or(5.0) / 10.0;
+        let engagement_score = self.engagement_score(anime).unwrap_or(0.3);
 
-        None
+        // Internal popularity based on recency, quality, and engagement
+        let internal_popularity =
+            (recency_score * 0.3 + quality_score * 0.5 + engagement_score * 0.2) * 10.0;
+        Some(self.clamp(internal_popularity, 0.0, 10.0))
     }
 
     fn audience_reach_score(&self, anime: &dyn Scoreable) -> Option<f32> {
-        let members = anime.members()? as f32;
-        if members <= 0.0 {
+        // Use favorites as proxy for audience reach since we removed members
+        let favorites = anime.favorites()? as f32;
+        if favorites <= 0.0 {
             return None;
         }
-        Some(self.normalize_log(members, self.context.max_members) * 10.0)
+        // Scale favorites to represent audience reach
+        Some(self.normalize_log(favorites, self.context.max_members * 0.1) * 10.0)
     }
 
     fn favorites_intensity(&self, anime: &dyn Scoreable) -> Option<f32> {
         let f = anime.favorites()? as f32;
-        let n = anime.members()? as f32;
-        if n <= 0.0 {
-            return None;
-        }
+        // Use favorites relative to expected baseline instead of members ratio
+        let baseline_favorites = 100.0; // Expected favorites for average anime
+        let intensity_ratio = f / baseline_favorites;
 
-        let lb = self.wilson_lower_bound(f, n, self.context.confidence_z);
-        Some(self.clamp((lb / 0.05) * 10.0, 0.0, 10.0))
+        // Apply logarithmic scaling to handle wide range of favorites
+        Some(self.clamp(self.normalize_log(intensity_ratio, 100.0) * 10.0, 0.0, 10.0))
     }
 
     fn engagement_score(&self, anime: &dyn Scoreable) -> Option<f32> {
-        let v = anime.scored_by()? as f32;
-        let n = anime.members()? as f32;
-        if n <= 0.0 {
+        // Use favorites directly as engagement metric (scored_by maps to favorites now)
+        let engagement = anime.scored_by()? as f32; // This maps to favorites in our unified system
+        if engagement <= 0.0 {
             return None;
         }
 
-        let lb = self.wilson_lower_bound(v, n, self.context.confidence_z);
-        Some(self.clamp(lb * 10.0, 0.0, 10.0))
+        // Normalize engagement relative to expected baseline
+        let baseline_engagement = 1000.0; // Expected engagement for average anime
+        let engagement_ratio = engagement / baseline_engagement;
+
+        Some(self.clamp(self.normalize_log(engagement_ratio, 10.0) * 10.0, 0.0, 10.0))
+    }
+
+    /// Calculate recency score based on air date
+    fn recency_score(&self, anime: &dyn Scoreable) -> Option<f32> {
+        let from = anime.aired_from()?;
+        let days_since_aired = (chrono::Utc::now() - from).num_days() as f32;
+
+        // Newer anime get higher scores, with decay over time
+        let years_since_aired = days_since_aired / 365.25;
+        let recency_score = (-years_since_aired / 5.0).exp(); // Decay over 5 years
+
+        Some(self.clamp(recency_score, 0.0, 1.0))
     }
 
     fn momentum_score(&self, anime: &dyn Scoreable) -> Option<f32> {
@@ -184,20 +198,18 @@ impl ScoreCalculator {
         }
 
         let days = days.max(1.0);
-        let m = anime.members().unwrap_or(0) as f32;
         let f = anime.favorites().unwrap_or(0) as f32;
-        let v = anime.scored_by().unwrap_or(0) as f32;
+        let score = anime.score().unwrap_or(5.0);
 
-        let members_per_day = m / days;
+        // Calculate momentum based on favorites per day and quality
         let favorites_per_day = f / days;
-        let votes_per_day = v / days;
+        let quality_factor = score / 10.0;
 
-        let mr = self.normalize_log(members_per_day, self.context.max_members_per_day);
         let fr = self.normalize_log(favorites_per_day, self.context.max_favorites_per_day);
-        let vr = self.normalize_log(votes_per_day, self.context.max_votes_per_day);
 
-        let score01 = 0.5 * mr + 0.3 * fr + 0.2 * vr;
-        Some(self.clamp(score01 * 10.0, 0.0, 10.0))
+        // Weight favorites momentum higher since we don't have members/votes
+        let momentum = 0.7 * fr + 0.3 * quality_factor;
+        Some(self.clamp(momentum * 10.0, 0.0, 10.0))
     }
 
     fn momentum_weight(&self, anime: &dyn Scoreable) -> f32 {
@@ -212,8 +224,12 @@ impl ScoreCalculator {
         }
 
         let freshness = self.half_life_decay(days, self.context.recency_half_life_days);
-        let votes = anime.scored_by().unwrap_or(0) as f32;
-        let reliability = self.clamp(votes / self.context.vote_reliability_threshold, 0.0, 1.0);
+        let engagement = anime.scored_by().unwrap_or(0) as f32; // Maps to favorites in unified system
+        let reliability = self.clamp(
+            engagement / (self.context.vote_reliability_threshold * 0.1),
+            0.0,
+            1.0,
+        );
 
         self.max_momentum_weight * freshness * (1.0 - reliability)
     }

@@ -9,15 +9,16 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { hasEnglishTitle } from "@/lib/anime-utils";
+import { getPreferredTitle } from "@/lib/title-utils";
+import { useSettingsStore } from "@/stores/settings-store";
 import {
   Star,
   Calendar,
   Play,
-  TrendingUp,
+  Clock,
   Trash2,
   ExternalLink,
-  Users,
-  Heart,
+  ShieldAlert,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Anime } from "@/types";
@@ -37,7 +38,11 @@ export function AnimeDrawer({
   onRemove,
   onViewDetails,
 }: AnimeDrawerProps) {
+  const { preferredTitleLanguage } = useSettingsStore();
+
   if (!anime) return null;
+
+  const displayTitle = getPreferredTitle(anime.title, preferredTitleLanguage);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -124,7 +129,7 @@ export function AnimeDrawer({
         <SheetHeader className="pb-4 border-b border-border/30">
           <div className="space-y-3">
             <SheetTitle className="text-xl font-bold leading-tight text-balance">
-              {anime.title.main}
+              {displayTitle}
             </SheetTitle>
 
             {/* English/Japanese titles */}
@@ -163,16 +168,12 @@ export function AnimeDrawer({
               >
                 {anime.animeType}
               </Badge>
-              <div className="flex items-center gap-1 text-xs text-muted-foreground bg-muted/40 px-2 py-1 rounded-full border border-border/30">
-                <Calendar className="h-3 w-3" />
-                {formatYear(anime.aired.from)}
-              </div>
             </div>
           </div>
         </SheetHeader>
 
         <div className="space-y-4 py-4">
-          {/* Stats Grid */}
+          {/* Info Grid */}
           <div className="grid grid-cols-2 gap-2">
             <div className="text-center p-3 bg-card rounded-lg border border-border/40">
               <Play className="h-4 w-4 text-primary mx-auto mb-1" />
@@ -182,24 +183,26 @@ export function AnimeDrawer({
               </div>
             </div>
             <div className="text-center p-3 bg-card rounded-lg border border-border/40">
-              <TrendingUp className="h-4 w-4 text-primary mx-auto mb-1" />
-              <div className="text-xs text-muted-foreground mb-1">Rank</div>
-              <div className="font-semibold text-sm">#{anime.rank || "?"}</div>
-            </div>
-            <div className="text-center p-3 bg-card rounded-lg border border-border/40">
-              <Users className="h-4 w-4 text-primary mx-auto mb-1" />
-              <div className="text-xs text-muted-foreground mb-1">Members</div>
+              <Clock className="h-4 w-4 text-primary mx-auto mb-1" />
+              <div className="text-xs text-muted-foreground mb-1">Duration</div>
               <div className="font-semibold text-sm">
-                {anime.members?.toLocaleString() || "?"}
+                {anime.duration || "?"}
               </div>
             </div>
             <div className="text-center p-3 bg-card rounded-lg border border-border/40">
-              <Heart className="h-4 w-4 text-primary mx-auto mb-1" />
+              <ShieldAlert className="h-4 w-4 text-primary mx-auto mb-1" />
               <div className="text-xs text-muted-foreground mb-1">
-                Favorites
+                Age rating
               </div>
               <div className="font-semibold text-sm">
-                {anime.favorites?.toLocaleString() || "?"}
+                {anime.ageRestriction || "?"}
+              </div>
+            </div>
+            <div className="text-center p-3 bg-card rounded-lg border border-border/40">
+              <Calendar className="h-4 w-4 text-primary mx-auto mb-1" />
+              <div className="text-xs text-muted-foreground mb-1">Year</div>
+              <div className="font-semibold text-sm">
+                {formatYear(anime.aired.from)}
               </div>
             </div>
           </div>
@@ -209,11 +212,6 @@ export function AnimeDrawer({
             <h3 className="font-semibold text-sm">Rating</h3>
             <div className="p-3 bg-muted/40 rounded-lg border border-border/30">
               {getRatingStars(anime.score)}
-              {anime.scoredBy && (
-                <div className="text-xs text-muted-foreground mt-2">
-                  Scored by {anime.scoredBy.toLocaleString()} users
-                </div>
-              )}
             </div>
           </div>
 
@@ -281,22 +279,6 @@ export function AnimeDrawer({
                   <div className="font-medium">{anime.source}</div>
                 </div>
               )}
-              {anime.duration && (
-                <div className="p-2 bg-muted/40 rounded border border-border/30">
-                  <span className="text-muted-foreground">Duration:</span>
-                  <div className="font-medium">{anime.duration}</div>
-                </div>
-              )}
-              {anime.ageRestriction && (
-                <div className="p-2 bg-muted/40 rounded border border-border/30">
-                  <span className="text-muted-foreground">Age Rating:</span>
-                  <div className="font-medium">{anime.ageRestriction}</div>
-                </div>
-              )}
-              <div className="p-2 bg-muted/40 rounded border border-border/30">
-                <span className="text-muted-foreground">Popularity:</span>
-                <div className="font-medium">#{anime.popularity || "?"}</div>
-              </div>
             </div>
           </div>
 

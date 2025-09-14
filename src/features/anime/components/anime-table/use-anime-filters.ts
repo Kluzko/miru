@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import type { Anime } from "@/types";
 
-export type SortBy = "rating" | "year" | "title" | "popularity" | "episodes";
+export type SortBy = "rating" | "year" | "title" | "episodes";
 export type SortOrder = "asc" | "desc";
 export type GroupBy =
   | "none"
@@ -19,6 +19,9 @@ export function useAnimeFilters(animes: Anime[]) {
   ]);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [ageRestrictionFilter, setAgeRestrictionFilter] =
+    useState<string>("all");
+  const [scoreRange, setScoreRange] = useState<[number, number]>([0, 10]);
   const [sortBy, setSortBy] = useState<SortBy>("rating");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
@@ -109,6 +112,8 @@ export function useAnimeFilters(animes: Anime[]) {
     setYearRange([1950, new Date().getFullYear()]);
     setStatusFilter("all");
     setTypeFilter("all");
+    setAgeRestrictionFilter("all");
+    setScoreRange([0, 10]);
   }, []);
 
   const uniqueGenres = useMemo(() => {
@@ -142,6 +147,16 @@ export function useAnimeFilters(animes: Anime[]) {
     return Array.from(types);
   }, [animes]);
 
+  const uniqueAgeRestrictions = useMemo(() => {
+    const ageRestrictions = new Set<string>();
+    animes.forEach((anime) => {
+      if (anime.ageRestriction) {
+        ageRestrictions.add(anime.ageRestriction);
+      }
+    });
+    return Array.from(ageRestrictions).sort();
+  }, [animes]);
+
   return {
     genreFilter,
     setGenreFilter,
@@ -155,6 +170,10 @@ export function useAnimeFilters(animes: Anime[]) {
     setStatusFilter,
     typeFilter,
     setTypeFilter,
+    ageRestrictionFilter,
+    setAgeRestrictionFilter,
+    scoreRange,
+    setScoreRange,
     sortBy,
     setSortBy,
     sortOrder,
@@ -169,5 +188,6 @@ export function useAnimeFilters(animes: Anime[]) {
     uniqueYears,
     uniqueStatuses,
     uniqueTypes,
+    uniqueAgeRestrictions,
   };
 }

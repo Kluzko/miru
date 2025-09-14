@@ -247,7 +247,7 @@ export type AiredDates = { from: string | null; to: string | null }
 /**
  * Comprehensive anime entity with full information for detailed views
  */
-export type AnimeDetailed = { id: string; title: AnimeTitle; providerMetadata: ProviderMetadata; score: number | null; scoredBy: number | null; rank: number | null; popularity: number | null; members: number | null; favorites: number | null; synopsis: string | null; episodes: number | null; status: AnimeStatus; aired: AiredDates; animeType: AnimeType; ageRestriction: string | null; genres: Genre[]; studios: string[]; source: string | null; duration: string | null; imageUrl: string | null; bannerImage: string | null; trailerUrl: string | null; compositeScore: number; tier: AnimeTier; qualityMetrics: QualityMetrics; createdAt: string; updatedAt: string }
+export type AnimeDetailed = { id: string; title: AnimeTitle; providerMetadata: ProviderMetadata; score: number | null; favorites: number | null; synopsis: string | null; episodes: number | null; status: AnimeStatus; aired: AiredDates; animeType: AnimeType; ageRestriction: string | null; genres: Genre[]; studios: string[]; source: string | null; duration: string | null; imageUrl: string | null; bannerImage: string | null; trailerUrl: string | null; compositeScore: number; tier: AnimeTier; qualityMetrics: QualityMetrics; createdAt: string; updatedAt: string; lastSyncedAt: string | null }
 /**
  * Supported anime data providers
  */

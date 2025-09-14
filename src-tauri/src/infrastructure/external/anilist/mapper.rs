@@ -1,21 +1,29 @@
 use crate::domain::{
     entities::{anime_detailed::*, Genre},
+    services::{ProviderAnimeData, UnifiedDataResolver},
     value_objects::{
         AnimeProvider, AnimeStatus, AnimeTier, AnimeTitle, AnimeType, ProviderMetadata,
         QualityMetrics, UnifiedAgeRestriction,
     },
 };
-use crate::infrastructure::shared::mappers::age_restriction_mapper::AgeRestrictionMapper;
+
 use chrono::{DateTime, TimeZone, Utc};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use super::dto::{AniListDate, AniListMedia};
+use super::dto::{AniListDate, AniListMedia, AniListTag};
 
 pub struct AniListMapper;
 
 impl AniListMapper {
     pub fn to_domain(anilist_media: AniListMedia) -> AnimeDetailed {
+        Self::to_domain_with_resolver(anilist_media, &UnifiedDataResolver::new())
+    }
+
+    pub fn to_domain_with_resolver(
+        anilist_media: AniListMedia,
+        resolver: &UnifiedDataResolver,
+    ) -> AnimeDetailed {
         let id = Uuid::new_v4();
 
         // Map title
@@ -73,24 +81,21 @@ impl AniListMapper {
         // Map image URL
         let image_url = anilist_media
             .cover_image
+            .clone()
             .and_then(|img| img.extra_large.or(img.large.or(img.medium)));
 
         AnimeDetailed {
             id,
             title,
             provider_metadata,
-            score: anilist_media.average_score.map(|s| s as f32 / 10.0), // AniList uses 0-100, convert to 0-10
-            scored_by: anilist_media.favourites.map(|f| f as u32), // Use favourites as scored_by
-            rank: None, // AniList doesn't provide rank directly
-            popularity: anilist_media.popularity.map(|p| p as u32),
-            members: None, // AniList doesn't have members field
-            favorites: anilist_media.favourites.map(|f| f as u32),
-            synopsis: anilist_media.description,
+            score: Self::normalize_score(anilist_media.average_score), // Unified 0-10 scale
+            favorites: anilist_media.favourites.map(|f| f as u32),     // Primary engagement metric
+            synopsis: anilist_media.description.clone(),
             episodes: anilist_media.episodes.map(|e| e as u16),
             status: Self::map_status(anilist_media.status.as_deref()),
             aired,
             anime_type: Self::map_anime_type(anilist_media.format.as_deref()),
-            age_restriction: Some(Self::map_age_restriction(anilist_media.is_adult)),
+            age_restriction: Self::resolve_age_restriction(&anilist_media, resolver),
             genres,
             studios,
             source: anilist_media.source,
@@ -111,7 +116,36 @@ impl AniListMapper {
             quality_metrics,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            last_synced_at: Some(Utc::now()),
         }
+    }
+
+    /// Create provider data for cross-provider resolution
+    pub fn to_provider_data(anilist_media: &AniListMedia) -> ProviderAnimeData {
+        ProviderAnimeData {
+            provider: AnimeProvider::AniList,
+            score: Self::normalize_score(anilist_media.average_score),
+            favorites: anilist_media.favourites.map(|f| f as u32),
+            age_restriction: Some(Self::map_age_restriction(
+                anilist_media.is_adult,
+                &anilist_media.tags,
+            )),
+            last_synced: Some(Utc::now()),
+        }
+    }
+
+    /// Normalize AniList score (0-100) to unified 0-10 scale
+    fn normalize_score(score: Option<i32>) -> Option<f32> {
+        score.map(|s| (s as f32 / 10.0).clamp(0.0, 10.0))
+    }
+
+    /// Resolve age restriction using cross-provider logic
+    fn resolve_age_restriction(
+        anilist_media: &AniListMedia,
+        resolver: &UnifiedDataResolver,
+    ) -> Option<UnifiedAgeRestriction> {
+        let provider_data = vec![Self::to_provider_data(anilist_media)];
+        resolver.resolve_age_restriction(&provider_data)
     }
 
     fn map_title(
@@ -174,15 +208,68 @@ impl AniListMapper {
         }
     }
 
-    fn map_age_restriction(is_adult: Option<bool>) -> UnifiedAgeRestriction {
-        // Convert AniList's boolean to a string that the shared mapper can handle
-        let rating_str = match is_adult {
-            Some(true) => "adult",
-            Some(false) | None => "all ages",
-        };
+    fn map_age_restriction(
+        is_adult: Option<bool>,
+        tags: &Option<Vec<AniListTag>>,
+    ) -> UnifiedAgeRestriction {
+        // If explicitly marked as adult content
+        if matches!(is_adult, Some(true)) {
+            return UnifiedAgeRestriction::Explicit;
+        }
 
-        AgeRestrictionMapper::map_to_unified(&AnimeProvider::AniList, rating_str)
-            .unwrap_or(UnifiedAgeRestriction::GeneralAudiences)
+        // Check tags for mature content indicators
+        if let Some(tag_list) = tags {
+            let has_mature_themes = tag_list.iter().any(|tag| {
+                let tag_name = tag.name.to_lowercase();
+                // Check for explicit adult tags
+                if matches!(tag.is_adult, Some(true)) {
+                    return true;
+                }
+                // Check for mature content indicators
+                matches!(
+                    tag_name.as_str(),
+                    "violence"
+                        | "gore"
+                        | "nudity"
+                        | "sexual themes"
+                        | "mature themes"
+                        | "ecchi"
+                        | "sexual content"
+                        | "graphic violence"
+                        | "blood"
+                        | "partial nudity"
+                        | "suggestive themes"
+                        | "mild sexual themes"
+                )
+            });
+
+            let has_teen_themes = tag_list.iter().any(|tag| {
+                let tag_name = tag.name.to_lowercase();
+                matches!(
+                    tag_name.as_str(),
+                    "mild violence"
+                        | "comedy"
+                        | "romance"
+                        | "school"
+                        | "slice of life"
+                        | "sports"
+                        | "supernatural"
+                        | "fantasy"
+                        | "sci-fi"
+                        | "adventure"
+                )
+            });
+
+            // Return appropriate rating based on tag analysis
+            return match (has_mature_themes, has_teen_themes) {
+                (true, _) => UnifiedAgeRestriction::Mature,
+                (false, true) => UnifiedAgeRestriction::ParentalGuidance13,
+                (false, false) => UnifiedAgeRestriction::ParentalGuidance13, // Default to PG-13 for consistency
+            };
+        }
+
+        // Default to PG-13 for consistency with Jikan when no tags available
+        UnifiedAgeRestriction::ParentalGuidance13
     }
 
     fn calculate_quality_metrics(anilist_media: &AniListMedia) -> QualityMetrics {

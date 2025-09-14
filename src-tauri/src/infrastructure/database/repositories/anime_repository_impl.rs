@@ -69,10 +69,6 @@ impl AnimeRepositoryImpl {
             title,
             provider_metadata,
             score: model.score,
-            scored_by: model.scored_by.map(|v| v as u32),
-            rank: model.rank.map(|v| v as u32),
-            popularity: model.popularity.map(|v| v as u32),
-            members: model.members.map(|v| v as u32),
             favorites: model.favorites.map(|v| v as u32),
             synopsis: model.synopsis,
             episodes: model.episodes.map(|v| v as u16),
@@ -97,6 +93,7 @@ impl AnimeRepositoryImpl {
             // relations: Vec::new(),     // Removed - field deleted
             created_at: model.created_at,
             updated_at: model.updated_at,
+            last_synced_at: model.last_synced_at,
         }
     }
 
@@ -107,10 +104,6 @@ impl AnimeRepositoryImpl {
             title_english: entity.title.english.clone(),
             title_japanese: entity.title.japanese.clone(),
             score: entity.score,
-            scored_by: entity.scored_by.map(|v| v as i32),
-            rank: entity.rank.map(|v| v as i32),
-            popularity: entity.popularity.map(|v| v as i32),
-            members: entity.members.map(|v| v as i32),
             favorites: entity.favorites.map(|v| v as i32),
             synopsis: entity.synopsis.clone(),
             episodes: entity.episodes.map(|v| v as i32),
@@ -139,6 +132,7 @@ impl AnimeRepositoryImpl {
             age_restriction: entity.age_restriction.clone(),
             status: entity.status.clone(),
             anime_type: entity.anime_type.clone(),
+            last_synced_at: entity.last_synced_at,
         }
     }
 
@@ -148,10 +142,6 @@ impl AnimeRepositoryImpl {
             title_english: entity.title.english.clone(),
             title_japanese: entity.title.japanese.clone(),
             score: entity.score,
-            scored_by: entity.scored_by.map(|v| v as i32),
-            rank: entity.rank.map(|v| v as i32),
-            popularity: entity.popularity.map(|v| v as i32),
-            members: entity.members.map(|v| v as i32),
             favorites: entity.favorites.map(|v| v as i32),
             synopsis: entity.synopsis.clone(),
             episodes: entity.episodes.map(|v| v as i32),
@@ -181,6 +171,7 @@ impl AnimeRepositoryImpl {
             age_restriction: entity.age_restriction.clone(),
             status: entity.status.clone(),
             anime_type: entity.anime_type.clone(),
+            last_synced_at: entity.last_synced_at,
         }
     }
 }
@@ -278,25 +269,79 @@ impl AnimeRepository for AnimeRepositoryImpl {
         let models = task::spawn_blocking(move || -> AppResult<Vec<Anime>> {
             let mut conn = db.get_connection()?;
 
-            // Build fragments with bound params (safe; no interpolation).
-            let pred = sql::<Bool>("similarity(LOWER(title), LOWER(")
+            // Enhanced search predicate with all title fields and synonyms
+            let pred = sql::<Bool>("(")
+                // Primary title fields (main, japanese, english) - higher priority
+                .sql("similarity(LOWER(title_main), LOWER(")
                 .bind::<Text, _>(&q)
-                .sql(")) > 0.3 OR similarity(LOWER(title_english), LOWER(")
-                .bind::<Text, _>(&q)
-                .sql(")) > 0.3 OR similarity(LOWER(title_japanese), LOWER(")
-                .bind::<Text, _>(&q)
-                .sql(")) > 0.3");
-
-            let rank = sql::<Float4>("GREATEST(")
-                .sql("similarity(LOWER(title), LOWER(")
-                .bind::<Text, _>(&q)
-                .sql(")),")
-                .sql("similarity(LOWER(title_english), LOWER(")
-                .bind::<Text, _>(&q)
-                .sql(")),")
+                .sql(")) > 0.25 OR ")
                 .sql("similarity(LOWER(title_japanese), LOWER(")
                 .bind::<Text, _>(&q)
-                .sql("))")
+                .sql(")) > 0.25 OR ")
+                .sql("similarity(LOWER(title_english), LOWER(")
+                .bind::<Text, _>(&q)
+                .sql(")) > 0.25 OR ")
+                // Secondary title fields (romaji, native) - standard threshold
+                .sql("similarity(LOWER(title_romaji), LOWER(")
+                .bind::<Text, _>(&q)
+                .sql(")) > 0.3 OR ")
+                .sql("similarity(LOWER(title_native), LOWER(")
+                .bind::<Text, _>(&q)
+                .sql(")) > 0.3 OR ")
+                // Exact matches in any title field (case insensitive)
+                .sql("LOWER(title_main) LIKE LOWER(")
+                .bind::<Text, _>(format!("%{}%", &q))
+                .sql(") OR ")
+                .sql("LOWER(title_english) LIKE LOWER(")
+                .bind::<Text, _>(format!("%{}%", &q))
+                .sql(") OR ")
+                .sql("LOWER(title_japanese) LIKE LOWER(")
+                .bind::<Text, _>(format!("%{}%", &q))
+                .sql(") OR ")
+                .sql("LOWER(title_romaji) LIKE LOWER(")
+                .bind::<Text, _>(format!("%{}%", &q))
+                .sql(") OR ")
+                .sql("LOWER(title_native) LIKE LOWER(")
+                .bind::<Text, _>(format!("%{}%", &q))
+                .sql(") OR ")
+                // Synonyms search (JSON array contains)
+                .sql("EXISTS (")
+                .sql("SELECT 1 FROM jsonb_array_elements_text(title_synonyms) AS synonym ")
+                .sql("WHERE similarity(LOWER(synonym), LOWER(")
+                .bind::<Text, _>(&q)
+                .sql(")) > 0.3")
+                .sql(")")
+                .sql(")");
+
+            // Enhanced ranking with prioritization for main, japanese, and english titles
+            let rank = sql::<Float4>("GREATEST(")
+                // Primary title fields get higher weight (x1.5)
+                .sql("similarity(LOWER(title_main), LOWER(")
+                .bind::<Text, _>(&q)
+                .sql(")) * 1.5,")
+                .sql("similarity(LOWER(title_japanese), LOWER(")
+                .bind::<Text, _>(&q)
+                .sql(")) * 1.5,")
+                .sql("similarity(LOWER(title_english), LOWER(")
+                .bind::<Text, _>(&q)
+                .sql(")) * 1.5,")
+                // Secondary title fields get normal weight
+                .sql("similarity(LOWER(title_romaji), LOWER(")
+                .bind::<Text, _>(&q)
+                .sql(")),")
+                .sql("similarity(LOWER(title_native), LOWER(")
+                .bind::<Text, _>(&q)
+                .sql(")),")
+                // Exact match bonus
+                .sql("CASE WHEN LOWER(title_main) LIKE LOWER(")
+                .bind::<Text, _>(format!("%{}%", &q))
+                .sql(") THEN 2.0 ELSE 0 END,")
+                .sql("CASE WHEN LOWER(title_english) LIKE LOWER(")
+                .bind::<Text, _>(format!("%{}%", &q))
+                .sql(") THEN 2.0 ELSE 0 END,")
+                .sql("CASE WHEN LOWER(title_japanese) LIKE LOWER(")
+                .bind::<Text, _>(format!("%{}%", &q))
+                .sql(") THEN 2.0 ELSE 0 END")
                 .sql(")");
 
             let rows = anime::table
@@ -434,19 +479,88 @@ impl AnimeRepository for AnimeRepositoryImpl {
     ) -> AppResult<Option<AnimeDetailed>> {
         let search_title_lower = search_title.to_lowercase();
         let search_pattern = format!("%{}%", search_title_lower);
+        let exact_pattern = search_title_lower.clone();
         let db = Arc::clone(&self.db);
 
         let result = task::spawn_blocking(move || {
             let mut conn = db.get_connection()?;
 
-            // Search across all title fields using LIKE with case insensitive matching
+            use diesel::dsl::sql;
+            use diesel::sql_types::{Bool, Float4, Text};
+
+            // Enhanced search predicate for title variations with prioritization
+            let pred = sql::<Bool>("(")
+                // Exact matches first (highest priority)
+                .sql("LOWER(title_main) = LOWER(")
+                .bind::<Text, _>(&exact_pattern)
+                .sql(") OR ")
+                .sql("LOWER(title_english) = LOWER(")
+                .bind::<Text, _>(&exact_pattern)
+                .sql(") OR ")
+                .sql("LOWER(title_japanese) = LOWER(")
+                .bind::<Text, _>(&exact_pattern)
+                .sql(") OR ")
+                // Primary title fields (main, japanese, english) - partial matches
+                .sql("LOWER(title_main) LIKE LOWER(")
+                .bind::<Text, _>(&search_pattern)
+                .sql(") OR ")
+                .sql("LOWER(title_english) LIKE LOWER(")
+                .bind::<Text, _>(&search_pattern)
+                .sql(") OR ")
+                .sql("LOWER(title_japanese) LIKE LOWER(")
+                .bind::<Text, _>(&search_pattern)
+                .sql(") OR ")
+                // Secondary title fields (romaji, native)
+                .sql("LOWER(title_romaji) LIKE LOWER(")
+                .bind::<Text, _>(&search_pattern)
+                .sql(") OR ")
+                .sql("LOWER(title_native) LIKE LOWER(")
+                .bind::<Text, _>(&search_pattern)
+                .sql(") OR ")
+                // Synonyms search (JSON array contains)
+                .sql("EXISTS (")
+                .sql("SELECT 1 FROM jsonb_array_elements_text(title_synonyms) AS synonym ")
+                .sql("WHERE LOWER(synonym) LIKE LOWER(")
+                .bind::<Text, _>(&search_pattern)
+                .sql(")")
+                .sql(")")
+                .sql(")");
+
+            // Enhanced ranking for import matching - prioritize exact matches and main/english/japanese titles
+            let rank = sql::<Float4>("GREATEST(")
+                // Exact matches get highest priority (x3.0)
+                .sql("CASE WHEN LOWER(title_main) = LOWER(")
+                .bind::<Text, _>(&exact_pattern)
+                .sql(") THEN 3.0 ELSE 0 END,")
+                .sql("CASE WHEN LOWER(title_english) = LOWER(")
+                .bind::<Text, _>(&exact_pattern)
+                .sql(") THEN 3.0 ELSE 0 END,")
+                .sql("CASE WHEN LOWER(title_japanese) = LOWER(")
+                .bind::<Text, _>(&exact_pattern)
+                .sql(") THEN 3.0 ELSE 0 END,")
+                // Primary title partial matches get high priority (x2.0)
+                .sql("CASE WHEN LOWER(title_main) LIKE LOWER(")
+                .bind::<Text, _>(&search_pattern)
+                .sql(") THEN 2.0 ELSE 0 END,")
+                .sql("CASE WHEN LOWER(title_english) LIKE LOWER(")
+                .bind::<Text, _>(&search_pattern)
+                .sql(") THEN 2.0 ELSE 0 END,")
+                .sql("CASE WHEN LOWER(title_japanese) LIKE LOWER(")
+                .bind::<Text, _>(&search_pattern)
+                .sql(") THEN 2.0 ELSE 0 END,")
+                // Secondary title fields get normal priority (x1.0)
+                .sql("CASE WHEN LOWER(title_romaji) LIKE LOWER(")
+                .bind::<Text, _>(&search_pattern)
+                .sql(") THEN 1.0 ELSE 0 END,")
+                .sql("CASE WHEN LOWER(title_native) LIKE LOWER(")
+                .bind::<Text, _>(&search_pattern)
+                .sql(") THEN 1.0 ELSE 0 END")
+                .sql(")");
+
+            // Search with enhanced criteria and prioritization
             let anime_models: Vec<Anime> = anime::table
-                .filter(
-                    anime::title_main
-                        .ilike(&search_pattern)
-                        .or(anime::title_english.ilike(&search_pattern))
-                        .or(anime::title_japanese.ilike(&search_pattern)),
-                )
+                .filter(pred)
+                .order((rank.desc(), anime::composite_score.desc()))
                 .limit(1)
                 .load::<Anime>(&mut conn)?;
             Ok::<Vec<Anime>, AppError>(anime_models)

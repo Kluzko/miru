@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import type { Anime } from "@/types";
 import { cn } from "@/lib/utils";
 import { getTierInfo } from "@/lib/anime-utils";
+import { getPreferredTitle } from "@/lib/title-utils";
+import { useSettingsStore } from "@/stores/settings-store";
 
 interface AnimeCardProps {
   anime: Anime;
@@ -12,6 +14,9 @@ interface AnimeCardProps {
 }
 
 export function AnimeCard({ anime, onClick, className }: AnimeCardProps) {
+  const { preferredTitleLanguage } = useSettingsStore();
+  const displayTitle = getPreferredTitle(anime.title, preferredTitleLanguage);
+
   const year = anime.aired.from
     ? new Date(anime.aired.from).getFullYear()
     : null;
@@ -28,7 +33,7 @@ export function AnimeCard({ anime, onClick, className }: AnimeCardProps) {
         <div className="aspect-[3/4] relative overflow-hidden">
           <img
             src={anime.imageUrl}
-            alt={anime.title.main}
+            alt={displayTitle}
             className="object-cover w-full h-full group-hover:scale-105 transition-transform"
           />
           <Badge
@@ -40,9 +45,7 @@ export function AnimeCard({ anime, onClick, className }: AnimeCardProps) {
         </div>
       )}
       <CardContent className="p-4">
-        <h3 className="font-semibold line-clamp-1">
-          {anime.title.main}
-        </h3>
+        <h3 className="font-semibold line-clamp-1">{displayTitle}</h3>
 
         <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
           <div className="flex items-center gap-1">
