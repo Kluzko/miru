@@ -410,6 +410,12 @@ impl AnimeRepository for AnimeRepositoryImpl {
             return Ok(vec![]);
         }
 
+        log_debug!(
+            "Starting bulk save operation for {} anime",
+            anime_list.len()
+        );
+        let batch_start = std::time::Instant::now();
+
         let db = Arc::clone(&self.db);
         let to_upsert = anime_list.to_vec();
 
@@ -417,33 +423,110 @@ impl AnimeRepository for AnimeRepositoryImpl {
             let mut conn = db.get_connection()?;
 
             conn.transaction::<Vec<Anime>, AppError, _>(|conn| {
-                let mut out = Vec::with_capacity(to_upsert.len());
+                log_debug!("Starting database transaction for bulk anime save");
+                let transaction_start = std::time::Instant::now();
 
-                for a in &to_upsert {
-                    // For batch operations, we'll use a simpler approach - just insert and handle conflicts
-                    // TODO: Implement proper external ID based conflict resolution for batch operations
-                    let new_row = Self::entity_to_new_model(a);
+                // Step 1: Bulk upsert anime records
+                log_debug!(
+                    "Preparing bulk anime insert for {} records",
+                    to_upsert.len()
+                );
+                let new_anime_records: Vec<NewAnime> = to_upsert
+                    .iter()
+                    .map(|a| Self::entity_to_new_model(a))
+                    .collect();
 
-                    let saved = diesel::insert_into(anime::table)
-                        .values(&new_row)
-                        .get_result::<Anime>(conn)?;
+                // Use bulk insert with ON CONFLICT DO UPDATE for anime records
+                let upsert_start = std::time::Instant::now();
+                let saved_anime: Vec<Anime> = diesel::insert_into(anime::table)
+                    .values(&new_anime_records)
+                    .on_conflict(anime::id)
+                    .do_update()
+                    .set((
+                        anime::title_english.eq(diesel::upsert::excluded(anime::title_english)),
+                        anime::title_japanese.eq(diesel::upsert::excluded(anime::title_japanese)),
+                        anime::score.eq(diesel::upsert::excluded(anime::score)),
+                        anime::favorites.eq(diesel::upsert::excluded(anime::favorites)),
+                        anime::synopsis.eq(diesel::upsert::excluded(anime::synopsis)),
+                        anime::episodes.eq(diesel::upsert::excluded(anime::episodes)),
+                        anime::aired_from.eq(diesel::upsert::excluded(anime::aired_from)),
+                        anime::aired_to.eq(diesel::upsert::excluded(anime::aired_to)),
+                        anime::source.eq(diesel::upsert::excluded(anime::source)),
+                        anime::duration.eq(diesel::upsert::excluded(anime::duration)),
+                        anime::image_url.eq(diesel::upsert::excluded(anime::image_url)),
+                        anime::composite_score.eq(diesel::upsert::excluded(anime::composite_score)),
+                        anime::updated_at.eq(chrono::Utc::now()),
+                        anime::title_main.eq(diesel::upsert::excluded(anime::title_main)),
+                        anime::title_romaji.eq(diesel::upsert::excluded(anime::title_romaji)),
+                        anime::title_native.eq(diesel::upsert::excluded(anime::title_native)),
+                        anime::title_synonyms.eq(diesel::upsert::excluded(anime::title_synonyms)),
+                        anime::banner_image.eq(diesel::upsert::excluded(anime::banner_image)),
+                        anime::trailer_url.eq(diesel::upsert::excluded(anime::trailer_url)),
+                        anime::tier.eq(diesel::upsert::excluded(anime::tier)),
+                        anime::quality_metrics.eq(diesel::upsert::excluded(anime::quality_metrics)),
+                        anime::status.eq(diesel::upsert::excluded(anime::status)),
+                        anime::anime_type.eq(diesel::upsert::excluded(anime::anime_type)),
+                        anime::age_restriction.eq(diesel::upsert::excluded(anime::age_restriction)),
+                        anime::last_synced_at.eq(diesel::upsert::excluded(anime::last_synced_at)),
+                    ))
+                    .get_results::<Anime>(conn)?;
 
-                    out.push(saved);
-                }
+                log_debug!(
+                    "Bulk anime upsert completed in {:.2}ms for {} records",
+                    upsert_start.elapsed().as_secs_f64() * 1000.0,
+                    saved_anime.len()
+                );
 
-                Ok(out)
+                // Step 2: Bulk handle external IDs for all anime
+                let external_ids_start = std::time::Instant::now();
+                Self::bulk_upsert_external_ids_blocking(conn, &saved_anime, &to_upsert)?;
+                log_debug!(
+                    "Bulk external IDs processing completed in {:.2}ms",
+                    external_ids_start.elapsed().as_secs_f64() * 1000.0
+                );
+
+                log_debug!(
+                    "Database transaction completed in {:.2}ms",
+                    transaction_start.elapsed().as_secs_f64() * 1000.0
+                );
+
+                Ok(saved_anime)
             })
         })
         .await??;
 
-        for (saved, input) in saved_models.iter().zip(anime_list.iter()) {
-            self.upsert_genres(saved.id, &input.genres).await?;
-            self.upsert_studios(saved.id, &input.studios).await?;
-            self.upsert_quality_metrics(saved.id, &input.quality_metrics)
-                .await?;
-        }
+        // Step 3: Bulk process related data (genres, studios, quality_metrics)
+        let relations_start = std::time::Instant::now();
 
-        self.load_anime_batch_with_relations(saved_models).await
+        log_debug!(
+            "Starting bulk relations processing for {} anime",
+            saved_models.len()
+        );
+        self.bulk_upsert_all_relations(&saved_models, anime_list)
+            .await?;
+
+        log_debug!(
+            "Bulk relations processing completed in {:.2}ms",
+            relations_start.elapsed().as_secs_f64() * 1000.0
+        );
+
+        // Step 4: Load final results with relations
+        let load_start = std::time::Instant::now();
+        let final_results = self.load_anime_batch_with_relations(saved_models).await?;
+
+        log_debug!(
+            "Final data loading completed in {:.2}ms",
+            load_start.elapsed().as_secs_f64() * 1000.0
+        );
+
+        log_debug!(
+            "Bulk save operation completed in {:.2}ms for {} anime (avg: {:.2}ms per anime)",
+            batch_start.elapsed().as_secs_f64() * 1000.0,
+            final_results.len(),
+            batch_start.elapsed().as_secs_f64() * 1000.0 / final_results.len() as f64
+        );
+
+        Ok(final_results)
     }
 
     async fn update(&self, anime: &AnimeDetailed) -> AppResult<AnimeDetailed> {
@@ -807,6 +890,343 @@ impl AnimeRepositoryImpl {
         }
 
         Ok(())
+    }
+
+    /// Bulk upsert external IDs for multiple anime - optimized for batch operations
+    fn bulk_upsert_external_ids_blocking(
+        conn: &mut diesel::PgConnection,
+        saved_anime: &[Anime],
+        original_anime: &[AnimeDetailed],
+    ) -> AppResult<()> {
+        use crate::infrastructure::database::schema::anime_external_ids;
+        use diesel::prelude::*;
+
+        // Collect all external ID records to insert
+        let mut external_id_records = Vec::new();
+        let current_time = chrono::Utc::now();
+
+        for (saved, original) in saved_anime.iter().zip(original_anime.iter()) {
+            for (provider, external_id) in &original.provider_metadata.external_ids {
+                // Skip invalid external IDs
+                if external_id.is_empty() || external_id == "0" {
+                    continue;
+                }
+
+                let provider_code = match provider {
+                    AnimeProvider::Jikan => "jikan",
+                    AnimeProvider::AniList => "anilist",
+                    AnimeProvider::Kitsu => "kitsu",
+                    AnimeProvider::TMDB => "tmdb",
+                    AnimeProvider::AniDB => "anidb",
+                };
+
+                let is_primary = provider == &original.provider_metadata.primary_provider;
+
+                external_id_records.push((
+                    anime_external_ids::anime_id.eq(saved.id),
+                    anime_external_ids::provider_code.eq(provider_code),
+                    anime_external_ids::external_id.eq(external_id.clone()),
+                    anime_external_ids::is_primary.eq(is_primary),
+                    anime_external_ids::last_synced.eq(current_time),
+                ));
+            }
+        }
+
+        // Bulk insert external IDs if any exist
+        if !external_id_records.is_empty() {
+            log_debug!(
+                "Bulk upserting {} external ID records",
+                external_id_records.len()
+            );
+            diesel::insert_into(anime_external_ids::table)
+                .values(&external_id_records)
+                .on_conflict((
+                    anime_external_ids::anime_id,
+                    anime_external_ids::provider_code,
+                ))
+                .do_update()
+                .set((
+                    anime_external_ids::external_id
+                        .eq(diesel::upsert::excluded(anime_external_ids::external_id)),
+                    anime_external_ids::is_primary
+                        .eq(diesel::upsert::excluded(anime_external_ids::is_primary)),
+                    anime_external_ids::last_synced.eq(current_time),
+                ))
+                .execute(conn)?;
+        }
+
+        Ok(())
+    }
+
+    /// Bulk process all relations (genres, studios, quality_metrics) for multiple anime
+    async fn bulk_upsert_all_relations(
+        &self,
+        saved_anime: &[Anime],
+        original_anime: &[AnimeDetailed],
+    ) -> AppResult<()> {
+        // Process all relations in parallel for better performance
+        let genres_task = self.bulk_upsert_genres(saved_anime, original_anime);
+        let studios_task = self.bulk_upsert_studios(saved_anime, original_anime);
+        let metrics_task = self.bulk_upsert_quality_metrics(saved_anime, original_anime);
+
+        // Wait for all operations to complete
+        tokio::try_join!(genres_task, studios_task, metrics_task)?;
+
+        Ok(())
+    }
+
+    /// Bulk upsert genres for multiple anime
+    async fn bulk_upsert_genres(
+        &self,
+        saved_anime: &[Anime],
+        original_anime: &[AnimeDetailed],
+    ) -> AppResult<()> {
+        let db = Arc::clone(&self.db);
+        let anime_pairs: Vec<(Uuid, Vec<Genre>)> = saved_anime
+            .iter()
+            .zip(original_anime.iter())
+            .map(|(saved, original)| (saved.id, original.genres.clone()))
+            .collect();
+
+        task::spawn_blocking(move || -> AppResult<()> {
+            let mut conn = db.get_connection()?;
+
+            conn.transaction::<_, AppError, _>(|conn| {
+                // Step 1: Collect all unique genres to upsert
+                let mut all_genres = std::collections::HashMap::new();
+                for (_, genres) in &anime_pairs {
+                    for genre in genres {
+                        all_genres.insert(genre.name.clone(), genre.clone());
+                    }
+                }
+
+                // Step 2: Bulk upsert all unique genres
+                if !all_genres.is_empty() {
+                    let genre_records: Vec<NewGenre> = all_genres
+                        .values()
+                        .map(|g| NewGenre {
+                            id: g.id,
+                            name: g.name.clone(),
+                        })
+                        .collect();
+
+                    log_debug!("Bulk upserting {} unique genres", genre_records.len());
+                    diesel::insert_into(genres::table)
+                        .values(&genre_records)
+                        .on_conflict(genres::name)
+                        .do_update()
+                        .set(genres::name.eq(diesel::upsert::excluded(genres::name)))
+                        .execute(conn)?;
+                }
+
+                // Step 3: Get genre IDs for association
+                let genre_name_to_id: std::collections::HashMap<String, Uuid> =
+                    if !all_genres.is_empty() {
+                        let names: Vec<String> = all_genres.keys().cloned().collect();
+                        genres::table
+                            .filter(genres::name.eq_any(&names))
+                            .select((genres::name, genres::id))
+                            .load::<(String, Uuid)>(conn)?
+                            .into_iter()
+                            .collect()
+                    } else {
+                        std::collections::HashMap::new()
+                    };
+
+                // Step 4: Clear existing associations and create new ones in bulk
+                let anime_ids: Vec<Uuid> = anime_pairs.iter().map(|(id, _)| *id).collect();
+
+                if !anime_ids.is_empty() {
+                    diesel::delete(
+                        anime_genres::table.filter(anime_genres::anime_id.eq_any(&anime_ids)),
+                    )
+                    .execute(conn)?;
+
+                    let mut association_records = Vec::new();
+                    for (anime_id, genres) in &anime_pairs {
+                        for genre in genres {
+                            if let Some(genre_id) = genre_name_to_id.get(&genre.name) {
+                                association_records.push(NewAnimeGenre {
+                                    anime_id: *anime_id,
+                                    genre_id: *genre_id,
+                                });
+                            }
+                        }
+                    }
+
+                    if !association_records.is_empty() {
+                        log_debug!(
+                            "Bulk inserting {} anime-genre associations",
+                            association_records.len()
+                        );
+                        diesel::insert_into(anime_genres::table)
+                            .values(&association_records)
+                            .on_conflict_do_nothing()
+                            .execute(conn)?;
+                    }
+                }
+
+                Ok(())
+            })
+        })
+        .await?
+    }
+
+    /// Bulk upsert studios for multiple anime
+    async fn bulk_upsert_studios(
+        &self,
+        saved_anime: &[Anime],
+        original_anime: &[AnimeDetailed],
+    ) -> AppResult<()> {
+        let db = Arc::clone(&self.db);
+        let anime_pairs: Vec<(Uuid, Vec<String>)> = saved_anime
+            .iter()
+            .zip(original_anime.iter())
+            .map(|(saved, original)| (saved.id, original.studios.clone()))
+            .collect();
+
+        task::spawn_blocking(move || -> AppResult<()> {
+            let mut conn = db.get_connection()?;
+
+            conn.transaction::<_, AppError, _>(|conn| {
+                // Step 1: Collect all unique studios to upsert
+                let mut all_studios = std::collections::HashSet::new();
+                for (_, studios) in &anime_pairs {
+                    for studio in studios {
+                        all_studios.insert(studio.clone());
+                    }
+                }
+
+                // Step 2: Bulk upsert all unique studios
+                if !all_studios.is_empty() {
+                    let studio_records: Vec<NewStudio> = all_studios
+                        .iter()
+                        .map(|name| NewStudio {
+                            id: Uuid::new_v4(),
+                            name: name.clone(),
+                        })
+                        .collect();
+
+                    log_debug!("Bulk upserting {} unique studios", studio_records.len());
+                    diesel::insert_into(studios::table)
+                        .values(&studio_records)
+                        .on_conflict(studios::name)
+                        .do_nothing()
+                        .execute(conn)?;
+                }
+
+                // Step 3: Get studio IDs for association
+                let studio_name_to_id: std::collections::HashMap<String, Uuid> =
+                    if !all_studios.is_empty() {
+                        let names: Vec<String> = all_studios.into_iter().collect();
+                        studios::table
+                            .filter(studios::name.eq_any(&names))
+                            .select((studios::name, studios::id))
+                            .load::<(String, Uuid)>(conn)?
+                            .into_iter()
+                            .collect()
+                    } else {
+                        std::collections::HashMap::new()
+                    };
+
+                // Step 4: Clear existing associations and create new ones in bulk
+                let anime_ids: Vec<Uuid> = anime_pairs.iter().map(|(id, _)| *id).collect();
+
+                if !anime_ids.is_empty() {
+                    diesel::delete(
+                        anime_studios::table.filter(anime_studios::anime_id.eq_any(&anime_ids)),
+                    )
+                    .execute(conn)?;
+
+                    let mut association_records = Vec::new();
+                    for (anime_id, studios) in &anime_pairs {
+                        for studio_name in studios {
+                            if let Some(studio_id) = studio_name_to_id.get(studio_name) {
+                                association_records.push(NewAnimeStudio {
+                                    anime_id: *anime_id,
+                                    studio_id: *studio_id,
+                                });
+                            }
+                        }
+                    }
+
+                    if !association_records.is_empty() {
+                        log_debug!(
+                            "Bulk inserting {} anime-studio associations",
+                            association_records.len()
+                        );
+                        diesel::insert_into(anime_studios::table)
+                            .values(&association_records)
+                            .on_conflict_do_nothing()
+                            .execute(conn)?;
+                    }
+                }
+
+                Ok(())
+            })
+        })
+        .await?
+    }
+
+    /// Bulk upsert quality metrics for multiple anime
+    async fn bulk_upsert_quality_metrics(
+        &self,
+        saved_anime: &[Anime],
+        original_anime: &[AnimeDetailed],
+    ) -> AppResult<()> {
+        let db = Arc::clone(&self.db);
+        let anime_pairs: Vec<(Uuid, QualityMetrics)> = saved_anime
+            .iter()
+            .zip(original_anime.iter())
+            .map(|(saved, original)| (saved.id, original.quality_metrics.clone()))
+            .collect();
+
+        task::spawn_blocking(move || -> AppResult<()> {
+            let mut conn = db.get_connection()?;
+
+            if anime_pairs.is_empty() {
+                return Ok(());
+            }
+
+            let metrics_records: Vec<NewQualityMetrics> = anime_pairs
+                .iter()
+                .map(|(anime_id, metrics)| NewQualityMetrics {
+                    id: Uuid::new_v4(),
+                    anime_id: *anime_id,
+                    popularity_score: metrics.popularity_score,
+                    engagement_score: metrics.engagement_score,
+                    consistency_score: metrics.consistency_score,
+                    audience_reach_score: metrics.audience_reach_score,
+                })
+                .collect();
+
+            log_debug!(
+                "Bulk upserting {} quality metrics records",
+                metrics_records.len()
+            );
+
+            let current_time = chrono::Utc::now();
+            diesel::insert_into(quality_metrics::table)
+                .values(&metrics_records)
+                .on_conflict(quality_metrics::anime_id)
+                .do_update()
+                .set((
+                    quality_metrics::popularity_score
+                        .eq(diesel::upsert::excluded(quality_metrics::popularity_score)),
+                    quality_metrics::engagement_score
+                        .eq(diesel::upsert::excluded(quality_metrics::engagement_score)),
+                    quality_metrics::consistency_score
+                        .eq(diesel::upsert::excluded(quality_metrics::consistency_score)),
+                    quality_metrics::audience_reach_score.eq(diesel::upsert::excluded(
+                        quality_metrics::audience_reach_score,
+                    )),
+                    quality_metrics::updated_at.eq(current_time),
+                ))
+                .execute(&mut conn)?;
+
+            Ok(())
+        })
+        .await?
     }
 
     async fn upsert_genres(&self, anime_id: Uuid, genres_in: &[Genre]) -> AppResult<()> {

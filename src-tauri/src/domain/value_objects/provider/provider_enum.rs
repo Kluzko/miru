@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use std::fmt;
 
 /// Supported anime data providers
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq, Hash)]
@@ -27,6 +28,19 @@ impl AnimeProvider {
     /// Get default provider (Jikan)
     pub fn default() -> Self {
         Self::Jikan
+    }
+}
+
+impl fmt::Display for AnimeProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            AnimeProvider::Jikan => "jikan",
+            AnimeProvider::AniList => "anilist",
+            AnimeProvider::Kitsu => "kitsu",
+            AnimeProvider::TMDB => "tmdb",
+            AnimeProvider::AniDB => "anidb",
+        };
+        write!(f, "{}", name)
     }
 }
 

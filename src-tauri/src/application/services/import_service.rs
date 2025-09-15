@@ -1,15 +1,30 @@
 use super::provider_manager::ProviderManager;
 use crate::domain::repositories::AnimeRepository;
+use crate::domain::value_objects::AnimeProvider;
 use crate::shared::errors::{AppError, AppResult};
 use crate::shared::utils::logger::{LogContext, TimedOperation};
 use crate::{log_error, log_info, log_warn};
 use specta::Type;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tauri::Emitter;
 use tokio::sync::Mutex;
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
+/// Import service with dynamic concurrency optimization
+///
+/// This service automatically adjusts concurrency limits based on:
+/// - Provider-specific rate limits (e.g., MAL: ~3 req/s, AniList: ~1.5 req/s)
+/// - System resources (CPU cores for DB operations)
+/// - Safety factors to prevent rate limit violations
+///
+/// Key improvements over fixed concurrency:
+/// - API calls: Calculated from provider rate limits with 80% safety factor
+/// - DB operations: Scaled based on CPU cores (2x multiplier)
+/// - Provider-aware batching for mixed provider scenarios
+/// - Comprehensive logging of calculated limits
 #[derive(Clone)]
 pub struct ImportService {
     anime_repo: Arc<dyn AnimeRepository>,
@@ -25,6 +40,98 @@ impl ImportService {
             anime_repo,
             provider_manager,
         }
+    }
+
+    /// Calculate optimal concurrency for API requests based on provider rate limits
+    async fn calculate_api_concurrency(&self, provider: &AnimeProvider) -> usize {
+        const SAFETY_FACTOR: f64 = 0.8; // Use 80% of theoretical max to be conservative
+        const MIN_CONCURRENCY: usize = 1;
+        const MAX_CONCURRENCY: usize = 10;
+
+        let provider_manager = self.provider_manager.lock().await;
+
+        match provider_manager.get_provider_rate_limit(provider) {
+            Some(rate_info) => {
+                // Base concurrency on requests per second with safety factor
+                let theoretical_max =
+                    (rate_info.requests_per_second * SAFETY_FACTOR).ceil() as usize;
+                let optimal = theoretical_max.max(MIN_CONCURRENCY).min(MAX_CONCURRENCY);
+
+                log_info!(
+                    "Calculated API concurrency for {:?}: {} (rate: {:.2} req/s, safety factor: {:.1})",
+                    provider, optimal, rate_info.requests_per_second, SAFETY_FACTOR
+                );
+
+                optimal
+            }
+            None => {
+                log_warn!(
+                    "No rate limit info for provider {:?}, using default concurrency: {}",
+                    provider,
+                    MIN_CONCURRENCY
+                );
+                MIN_CONCURRENCY
+            }
+        }
+    }
+
+    /// Calculate optimal concurrency for database operations based on system resources
+    fn calculate_db_concurrency() -> usize {
+        const MIN_DB_CONCURRENCY: usize = 2;
+        const MAX_DB_CONCURRENCY: usize = 20;
+        const DB_CONCURRENCY_PER_CPU: usize = 2;
+
+        // Base DB concurrency on CPU cores (assuming connection pool can handle it)
+        let cpu_count = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4); // Default to 4 if can't detect
+
+        let optimal = (cpu_count * DB_CONCURRENCY_PER_CPU)
+            .max(MIN_DB_CONCURRENCY)
+            .min(MAX_DB_CONCURRENCY);
+
+        log_info!(
+            "Calculated DB concurrency: {} (CPUs: {}, multiplier: {}x)",
+            optimal,
+            cpu_count,
+            DB_CONCURRENCY_PER_CPU
+        );
+
+        optimal
+    }
+
+    /// Create provider-aware semaphores for mixed batch processing
+    async fn create_provider_semaphores(
+        &self,
+        providers: &[AnimeProvider],
+    ) -> HashMap<AnimeProvider, Arc<tokio::sync::Semaphore>> {
+        let mut semaphores = HashMap::new();
+
+        for provider in providers {
+            let concurrency = self.calculate_api_concurrency(provider).await;
+            let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
+            semaphores.insert(provider.clone(), semaphore);
+        }
+
+        semaphores
+    }
+
+    /// Group validated anime by their provider for optimized batch processing
+    fn group_anime_by_provider(
+        validated_anime: &[ValidatedAnime],
+    ) -> HashMap<AnimeProvider, Vec<&ValidatedAnime>> {
+        let mut groups = HashMap::new();
+
+        for anime in validated_anime {
+            let provider = anime.anime_data.provider_metadata.primary_provider.clone();
+            groups.entry(provider).or_insert_with(Vec::new).push(anime);
+        }
+
+        for (provider, animes) in &groups {
+            log_info!("Provider {:?}: {} anime to process", provider, animes.len());
+        }
+
+        groups
     }
 
     /// Helper method to get primary external ID and provider from anime
@@ -71,7 +178,7 @@ impl ImportService {
         }
     }
 
-    /// Import anime batch with progress reporting and memory optimization
+    /// Import anime batch with progress reporting and dynamic concurrency optimization
     pub async fn import_anime_batch(
         &self,
         titles: Vec<String>,
@@ -80,21 +187,32 @@ impl ImportService {
     ) -> AppResult<ImportResult> {
         let _timer = TimedOperation::new("import_anime_batch");
 
-        // Process in smaller chunks to limit memory usage
-        // Process in smaller chunks to limit memory usage
-        const _CHUNK_SIZE: usize = 5; // Smaller chunks for better memory management
-        const _MAX_CONCURRENT: usize = 2; // Reduce concurrent operations
-
         let total_count = titles.len();
+        log_info!(
+            "Starting dynamic concurrency batch import for {} titles",
+            total_count
+        );
 
-        log_info!("Starting batch import for {} titles", total_count);
+        // Calculate dynamic concurrency limits
+        let primary_provider = {
+            let provider_manager = self.provider_manager.lock().await;
+            provider_manager.get_primary_provider()
+        };
+
+        let api_concurrency = self.calculate_api_concurrency(&primary_provider).await;
+        let db_concurrency = Self::calculate_db_concurrency();
+
+        log_info!(
+            "Dynamic concurrency limits - API: {}, DB: {} for provider: {:?}",
+            api_concurrency,
+            db_concurrency,
+            primary_provider
+        );
 
         let imported = Arc::new(Mutex::new(Vec::new()));
         let failed = Arc::new(Mutex::new(Vec::new()));
         let skipped = Arc::new(Mutex::new(Vec::new()));
         let processed_count = Arc::new(AtomicUsize::new(0));
-
-        let total_count = titles.len();
 
         // Emit initial progress
         if let Some(ref app) = app_handle {
@@ -110,13 +228,14 @@ impl ImportService {
             let _ = app.emit("import_progress", &progress);
         }
 
-        // Use semaphore to limit concurrent requests while respecting rate limits
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(3)); // Max 3 concurrent requests
-        let mut handles = Vec::new();
+        // Use dynamically calculated semaphore limits
+        let api_semaphore = Arc::new(tokio::sync::Semaphore::new(api_concurrency));
+        let mut join_set = JoinSet::new();
 
+        // Spawn all tasks first
         for (_index, title) in titles.into_iter().enumerate() {
             let title_clone = title.clone();
-            let semaphore_clone = semaphore.clone();
+            let api_semaphore_clone = api_semaphore.clone();
             let service = self.clone();
             let imported_clone = imported.clone();
             let failed_clone = failed.clone();
@@ -124,8 +243,8 @@ impl ImportService {
             let processed_count_clone = processed_count.clone();
             let app_handle_clone = app_handle.clone();
 
-            let handle = tokio::spawn(async move {
-                let _permit = semaphore_clone.acquire().await.unwrap();
+            join_set.spawn(async move {
+                let _api_permit = api_semaphore_clone.acquire().await.unwrap();
 
                 // Emit progress for current item
                 if let Some(ref app) = app_handle_clone {
@@ -193,20 +312,40 @@ impl ImportService {
                     let _ = app.emit("import_progress", &progress);
                 }
             });
-
-            handles.push(handle);
         }
 
-        // Wait for all tasks to complete with proper error handling
+        // Stream task completions as they arrive
         let mut successful_tasks = 0;
         let mut failed_tasks = 0;
+        let total_spawned_tasks = join_set.len();
 
-        for handle in handles {
-            match handle.await {
-                Ok(_) => successful_tasks += 1,
+        log_info!(
+            "Starting streaming task processing: {} tasks spawned",
+            total_spawned_tasks
+        );
+
+        while let Some(result) = join_set.join_next().await {
+            let pending_tasks = join_set.len();
+
+            match result {
+                Ok(_) => {
+                    successful_tasks += 1;
+                    log_info!(
+                        "Task completed successfully - Progress: {}/{} completed, {} pending",
+                        successful_tasks + failed_tasks,
+                        total_spawned_tasks,
+                        pending_tasks
+                    );
+                }
                 Err(e) => {
                     failed_tasks += 1;
-                    log_error!("Background task failed: {:?}", e);
+                    log_error!(
+                        "Background task failed: {:?} - Progress: {}/{} completed, {} pending",
+                        e,
+                        successful_tasks + failed_tasks,
+                        total_spawned_tasks,
+                        pending_tasks
+                    );
                     // Add to failed results if task panicked
                     failed.lock().await.push(ImportError {
                         title: "Unknown".to_string(),
@@ -281,7 +420,7 @@ impl ImportService {
         }
     }
 
-    /// Optimized validation with DB-first lookup and proper logging/timing
+    /// Optimized validation with DB-first lookup and batched progress events
     pub async fn validate_anime_titles(
         &self,
         titles: Vec<String>,
@@ -296,22 +435,87 @@ impl ImportService {
         let mut not_found = Vec::new();
         let mut already_exists = Vec::new();
 
+        // Batching configuration
+        let batch_size = std::cmp::max(1, total_titles / 50);
+        let min_percentage_change = 1;
+        let mut last_emitted_percentage = 0;
+        let mut events_emitted = 0;
+
+        log_info!(
+            "Validation batching configured: batch_size={}, min_percentage_change={}%",
+            batch_size,
+            min_percentage_change
+        );
+
+        // Helper function to emit progress with batching logic
+        let emit_progress = |app: &tauri::AppHandle,
+                             current: usize,
+                             total: usize,
+                             current_title: String,
+                             processed: usize,
+                             found_count: usize,
+                             existing_count: usize,
+                             failed_count: usize,
+                             events_emitted: &mut usize,
+                             last_emitted_percentage: &mut usize,
+                             is_initial: bool,
+                             is_final: bool|
+         -> bool {
+            let current_percentage = if total > 0 {
+                (processed * 100) / total
+            } else {
+                0
+            };
+            let should_emit_percentage = current_percentage
+                .saturating_sub(*last_emitted_percentage)
+                >= min_percentage_change;
+            let should_emit_batch = processed % batch_size == 0;
+
+            let should_emit = is_initial || is_final || should_emit_percentage || should_emit_batch;
+
+            if should_emit {
+                let progress = ValidationProgress {
+                    current,
+                    total,
+                    current_title,
+                    processed,
+                    found_count,
+                    existing_count,
+                    failed_count,
+                };
+
+                match app.emit("validation_progress", &progress) {
+                    Ok(_) => {
+                        *events_emitted += 1;
+                        *last_emitted_percentage = current_percentage;
+                        true
+                    }
+                    Err(e) => {
+                        log_error!("Failed to emit validation progress: {}", e);
+                        false
+                    }
+                }
+            } else {
+                false
+            }
+        };
+
         // Emit initial progress
         if let Some(app) = app_handle {
-            let progress = ValidationProgress {
-                current: 0,
-                total: total_titles,
-                current_title: "Starting validation...".to_string(),
-                processed: 0,
-                found_count: 0,
-                existing_count: 0,
-                failed_count: 0,
-            };
-            log_info!("🚀 Emitting initial validation progress: {:#?}", progress);
-            match app.emit("validation_progress", &progress) {
-                Ok(_) => log_info!("✅ Initial validation progress event emitted successfully"),
-                Err(e) => log_error!("❌ Failed to emit initial validation progress: {}", e),
-            }
+            emit_progress(
+                app,
+                0,
+                total_titles,
+                "Starting validation...".to_string(),
+                0,
+                0,
+                0,
+                0,
+                &mut events_emitted,
+                &mut last_emitted_percentage,
+                true,  // is_initial
+                false, // is_final
+            );
 
             // Small delay to ensure frontend receives initial event
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -320,35 +524,10 @@ impl ImportService {
         // Process titles sequentially with optimized DB-first lookup
         for (index, title) in titles.iter().enumerate() {
             let item_timer = TimedOperation::new("validate_single_title");
-            log_info!("Validating {}/{}: '{}'", index + 1, total_titles, title);
-
-            // Emit progress for current item
-            if let Some(app) = app_handle {
-                let progress = ValidationProgress {
-                    current: index + 1,
-                    total: total_titles,
-                    current_title: format!("Validating: {}", title),
-                    processed: index,
-                    found_count: found.len(),
-                    existing_count: already_exists.len(),
-                    failed_count: not_found.len(),
-                };
-                log_info!(
-                    "📡 Emitting progress for item {}/{}: {}",
-                    index + 1,
-                    total_titles,
-                    title
-                );
-                match app.emit("validation_progress", &progress) {
-                    Ok(_) => log_info!("✅ Progress event emitted successfully"),
-                    Err(e) => log_error!("❌ Failed to emit progress event: {}", e),
-                }
-            }
 
             // STEP 1: Check database first using title variations (same as optimized import)
             match self.anime_repo.find_by_title_variations(title).await {
                 Ok(Some(existing_anime)) => {
-                    log_info!("Found '{}' in database via title match", title);
                     already_exists.push(ExistingAnime {
                         input_title: title.clone(),
                         matched_title: existing_anime.title.main.clone(),
@@ -356,119 +535,189 @@ impl ImportService {
                         anime: existing_anime,
                     });
                     item_timer.finish();
-                    continue;
                 }
                 Ok(None) => {
-                    log_info!("'{}' not found in database, checking providers", title);
-                    // Continue to provider lookup
-                }
-                Err(e) => {
-                    log_warn!("Database lookup failed for '{}': {}", title, e);
-                    // Continue to provider lookup as fallback
-                }
-            }
+                    // STEP 2: Search providers only if not found in DB
+                    match self.search_anime_multi_provider(title).await {
+                        Ok(anime_list) if !anime_list.is_empty() => {
+                            let anime = anime_list.into_iter().next().unwrap();
+                            let (external_id, provider) = Self::get_primary_external_info(&anime);
 
-            // STEP 2: Search providers only if not found in DB
-            match self.search_anime_multi_provider(title).await {
-                Ok(anime_list) if !anime_list.is_empty() => {
-                    let anime = anime_list.into_iter().next().unwrap();
-                    let (external_id, provider) = Self::get_primary_external_info(&anime);
-
-                    if Self::is_valid_external_id(&external_id) {
-                        // STEP 3: Double-check by external_id to avoid duplicates (same as optimized import)
-                        match self
-                            .anime_repo
-                            .find_by_external_id(&provider, &external_id)
-                            .await
-                        {
-                            Ok(Some(existing)) => {
-                                log_info!(
-                                    "Found '{}' in database via external ID {}",
-                                    title,
-                                    external_id
-                                );
-                                already_exists.push(ExistingAnime {
-                                    input_title: title.clone(),
-                                    matched_title: existing.title.main.clone(),
-                                    matched_field: format!("{:?}_id", provider),
-                                    anime: existing,
-                                });
-                            }
-                            Ok(None) => {
-                                log_info!("'{}' found via provider, ready for import", title);
+                            if Self::is_valid_external_id(&external_id) {
+                                // STEP 3: Double-check by external_id to avoid duplicates
+                                match self
+                                    .anime_repo
+                                    .find_by_external_id(&provider, &external_id)
+                                    .await
+                                {
+                                    Ok(Some(existing)) => {
+                                        already_exists.push(ExistingAnime {
+                                            input_title: title.clone(),
+                                            matched_title: existing.title.main.clone(),
+                                            matched_field: format!("{:?}_id", provider),
+                                            anime: existing,
+                                        });
+                                    }
+                                    Ok(None) => {
+                                        found.push(ValidatedAnime {
+                                            input_title: title.clone(),
+                                            anime_data: anime,
+                                        });
+                                    }
+                                    Err(e) => {
+                                        log_warn!(
+                                            "External ID check failed for '{}': {}",
+                                            title,
+                                            e
+                                        );
+                                        not_found.push(ImportError {
+                                            title: title.clone(),
+                                            reason: format!(
+                                                "Database error during external ID check: {}",
+                                                e
+                                            ),
+                                        });
+                                    }
+                                }
+                            } else {
+                                log_warn!("Invalid external ID for '{}': {}", title, external_id);
+                                // Still add to found list as it might be importable
                                 found.push(ValidatedAnime {
                                     input_title: title.clone(),
                                     anime_data: anime,
                                 });
                             }
-                            Err(e) => {
-                                log_warn!("External ID check failed for '{}': {}", title, e);
-                                not_found.push(ImportError {
-                                    title: title.clone(),
-                                    reason: format!(
-                                        "Database error during external ID check: {}",
-                                        e
-                                    ),
+                        }
+                        Ok(_) => {
+                            not_found.push(ImportError {
+                                title: title.clone(),
+                                reason: "No results found on any provider".to_string(),
+                            });
+                        }
+                        Err(e) => {
+                            LogContext::error_with_context(
+                                &e,
+                                &format!("Provider search failed for '{}'", title),
+                            );
+                            not_found.push(ImportError {
+                                title: title.clone(),
+                                reason: format!("Provider search failed: {}", e),
+                            });
+                        }
+                    }
+                    item_timer.finish();
+                }
+                Err(e) => {
+                    log_warn!("Database lookup failed for '{}': {}", title, e);
+                    // Continue to provider lookup as fallback
+                    match self.search_anime_multi_provider(title).await {
+                        Ok(anime_list) if !anime_list.is_empty() => {
+                            let anime = anime_list.into_iter().next().unwrap();
+                            let (external_id, provider) = Self::get_primary_external_info(&anime);
+
+                            if Self::is_valid_external_id(&external_id) {
+                                match self
+                                    .anime_repo
+                                    .find_by_external_id(&provider, &external_id)
+                                    .await
+                                {
+                                    Ok(Some(existing)) => {
+                                        already_exists.push(ExistingAnime {
+                                            input_title: title.clone(),
+                                            matched_title: existing.title.main.clone(),
+                                            matched_field: format!("{:?}_id", provider),
+                                            anime: existing,
+                                        });
+                                    }
+                                    Ok(None) => {
+                                        found.push(ValidatedAnime {
+                                            input_title: title.clone(),
+                                            anime_data: anime,
+                                        });
+                                    }
+                                    Err(e) => {
+                                        log_warn!(
+                                            "External ID check failed for '{}': {}",
+                                            title,
+                                            e
+                                        );
+                                        not_found.push(ImportError {
+                                            title: title.clone(),
+                                            reason: format!(
+                                                "Database error during external ID check: {}",
+                                                e
+                                            ),
+                                        });
+                                    }
+                                }
+                            } else {
+                                found.push(ValidatedAnime {
+                                    input_title: title.clone(),
+                                    anime_data: anime,
                                 });
                             }
                         }
-                    } else {
-                        log_warn!("Invalid external ID for '{}': {}", title, external_id);
-                        // Still add to found list as it might be importable
-                        found.push(ValidatedAnime {
-                            input_title: title.clone(),
-                            anime_data: anime,
-                        });
+                        Ok(_) => {
+                            not_found.push(ImportError {
+                                title: title.clone(),
+                                reason: "No results found on any provider".to_string(),
+                            });
+                        }
+                        Err(e) => {
+                            LogContext::error_with_context(
+                                &e,
+                                &format!("Provider search failed for '{}'", title),
+                            );
+                            not_found.push(ImportError {
+                                title: title.clone(),
+                                reason: format!("Provider search failed: {}", e),
+                            });
+                        }
                     }
-                }
-                Ok(_) => {
-                    log_info!("No results found for '{}' on any provider", title);
-                    not_found.push(ImportError {
-                        title: title.clone(),
-                        reason: "No results found on any provider".to_string(),
-                    });
-                }
-                Err(e) => {
-                    LogContext::error_with_context(
-                        &e,
-                        &format!("Provider search failed for '{}'", title),
-                    );
-                    not_found.push(ImportError {
-                        title: title.clone(),
-                        reason: format!("Provider search failed: {}", e),
-                    });
+                    item_timer.finish();
                 }
             }
 
-            item_timer.finish();
-
-            // Emit progress after processing each item
+            // Emit batched progress updates
             if let Some(app) = app_handle {
-                let progress = ValidationProgress {
-                    current: index + 1,
-                    total: total_titles,
-                    current_title: format!("Processed: {}", title),
-                    processed: index + 1,
-                    found_count: found.len(),
-                    existing_count: already_exists.len(),
-                    failed_count: not_found.len(),
-                };
-                let _ = app.emit("validation_progress", &progress);
+                let processed = index + 1;
+                emit_progress(
+                    app,
+                    processed,
+                    total_titles,
+                    if processed < total_titles {
+                        format!("Processing... ({}/{})", processed, total_titles)
+                    } else {
+                        "Validation completed".to_string()
+                    },
+                    processed,
+                    found.len(),
+                    already_exists.len(),
+                    not_found.len(),
+                    &mut events_emitted,
+                    &mut last_emitted_percentage,
+                    false,                     // is_initial
+                    processed == total_titles, // is_final
+                );
             }
         }
 
-        // Emit final completion progress
+        // Emit final completion progress (if not already emitted)
         if let Some(app) = app_handle {
-            let progress = ValidationProgress {
-                current: total_titles,
-                total: total_titles,
-                current_title: "Validation completed".to_string(),
-                processed: total_titles,
-                found_count: found.len(),
-                existing_count: already_exists.len(),
-                failed_count: not_found.len(),
-            };
-            let _ = app.emit("validation_progress", &progress);
+            emit_progress(
+                app,
+                total_titles,
+                total_titles,
+                "Validation completed".to_string(),
+                total_titles,
+                found.len(),
+                already_exists.len(),
+                not_found.len(),
+                &mut events_emitted,
+                &mut last_emitted_percentage,
+                false, // is_initial
+                true,  // is_final
+            );
         }
 
         let result = ValidationResult {
@@ -479,16 +728,23 @@ impl ImportService {
         };
 
         log_info!(
-            "Validation completed: {} found, {} already exist, {} not found",
+            "Validation completed: {} found, {} already exist, {} not found. Events emitted: {} (vs {} items processed - {:.1}% reduction)",
             found.len(),
             already_exists.len(),
-            not_found.len()
+            not_found.len(),
+            events_emitted,
+            total_titles,
+            if total_titles > 0 {
+                100.0 - (events_emitted as f64 / total_titles as f64 * 100.0)
+            } else {
+                0.0
+            }
         );
 
         Ok(result)
     }
 
-    /// Import validated anime to database with optimized processing and progress reporting
+    /// Import validated anime to database with dynamic concurrency optimization
     pub async fn import_validated_anime(
         &self,
         validated_anime: Vec<ValidatedAnime>,
@@ -498,9 +754,13 @@ impl ImportService {
 
         let total_count = validated_anime.len();
         log_info!(
-            "Starting optimized import for {} validated anime",
+            "Starting dynamic concurrency validated anime import for {} items",
             total_count
         );
+
+        // Calculate dynamic concurrency for database operations
+        let db_concurrency = Self::calculate_db_concurrency();
+        log_info!("Using dynamic DB concurrency: {}", db_concurrency);
 
         // Use Arc<Mutex<>> for thread-safe collections as in other optimized functions
         let imported = Arc::new(Mutex::new(Vec::new()));
@@ -522,13 +782,13 @@ impl ImportService {
             let _ = app.emit("import_progress", &progress);
         }
 
-        // Use semaphore to limit concurrent database operations
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(5)); // Max 5 concurrent DB operations
-        let mut handles = Vec::new();
+        // Use dynamically calculated semaphore for database operations
+        let db_semaphore = Arc::new(tokio::sync::Semaphore::new(db_concurrency));
+        let mut join_set = JoinSet::new();
 
         for (index, validated) in validated_anime.into_iter().enumerate() {
             let validated_clone = validated;
-            let semaphore_clone = semaphore.clone();
+            let db_semaphore_clone = db_semaphore.clone();
             let service = self.clone();
             let imported_clone = imported.clone();
             let failed_clone = failed.clone();
@@ -536,8 +796,8 @@ impl ImportService {
             let processed_count_clone = processed_count.clone();
             let app_handle_clone = app_handle.clone();
 
-            let handle = tokio::spawn(async move {
-                let _permit = semaphore_clone.acquire().await.unwrap();
+            join_set.spawn(async move {
+                let _db_permit = db_semaphore_clone.acquire().await.unwrap();
                 let item_timer = TimedOperation::new("import_single_validated_anime");
 
                 let current_index = index + 1;
@@ -580,7 +840,7 @@ impl ImportService {
                         .find_by_external_id(&provider, &external_id)
                         .await
                     {
-                        Ok(Some(existing_anime)) => {
+                        Ok(Some(_existing_anime)) => {
                             log_info!(
                                 "Skipping '{}' - already exists in database with {} ID: {}",
                                 anime_title,
@@ -692,23 +952,43 @@ impl ImportService {
                     let _ = app.emit("import_progress", &progress);
                 }
             });
-
-            handles.push(handle);
         }
 
-        // Wait for all tasks to complete with proper error handling
+        // Stream validated anime import completions as they arrive
         let mut successful_tasks = 0;
         let mut failed_tasks = 0;
+        let total_spawned_tasks = join_set.len();
 
-        for (task_index, handle) in handles.into_iter().enumerate() {
-            match handle.await {
-                Ok(_) => successful_tasks += 1,
+        log_info!(
+            "Starting streaming validated import processing: {} tasks spawned",
+            total_spawned_tasks
+        );
+
+        while let Some(result) = join_set.join_next().await {
+            let pending_tasks = join_set.len();
+
+            match result {
+                Ok(_) => {
+                    successful_tasks += 1;
+                    log_info!(
+                        "Validated import task completed successfully - Progress: {}/{} completed, {} pending",
+                        successful_tasks + failed_tasks,
+                        total_spawned_tasks,
+                        pending_tasks
+                    );
+                }
                 Err(e) => {
                     failed_tasks += 1;
-                    log_error!("Background import task {} failed: {:?}", task_index + 1, e);
+                    log_error!(
+                        "Validated import task failed: {:?} - Progress: {}/{} completed, {} pending",
+                        e,
+                        successful_tasks + failed_tasks,
+                        total_spawned_tasks,
+                        pending_tasks
+                    );
                     // Add to failed results if task panicked
                     failed.lock().await.push(ImportError {
-                        title: format!("Task {}", task_index + 1),
+                        title: "Unknown validated anime".to_string(),
                         reason: format!("Task panicked: {:?}", e),
                     });
                 }

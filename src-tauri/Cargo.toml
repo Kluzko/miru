@@ -58,6 +58,7 @@ uuid = { version = "1.6", features = ["v4", "v5", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = { version = "0.8", features = ["serde"] }
 regex = "1.10"
+dashmap = "6.0"
 
 # Logging
 env_logger = "0.10"

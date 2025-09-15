@@ -3,6 +3,7 @@ use crate::domain::{
     traits::anime_provider_client::{AnimeProviderClient, RateLimiterInfo},
     value_objects::AnimeProvider,
 };
+use crate::infrastructure::shared::provider_cache::ProviderCache;
 use crate::shared::{
     errors::{AppError, AppResult},
     utils::RateLimiter,
@@ -10,6 +11,7 @@ use crate::shared::{
 use async_trait::async_trait;
 use reqwest::{Client, StatusCode};
 use std::sync::Arc;
+use tracing::{debug, info, warn};
 
 use super::{
     dto::{JikanAnimeListResponse, JikanAnimeResponse, JikanSearchParams},
@@ -20,10 +22,15 @@ pub struct JikanClient {
     client: Client,
     base_url: String,
     rate_limiter: Arc<RateLimiter>,
+    cache: Arc<ProviderCache>,
 }
 
 impl JikanClient {
     pub fn new() -> AppResult<Self> {
+        Self::with_cache(Arc::new(ProviderCache::default()))
+    }
+
+    pub fn with_cache(cache: Arc<ProviderCache>) -> AppResult<Self> {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .user_agent("Miru-Anime-App/1.0")
@@ -36,6 +43,7 @@ impl JikanClient {
             client,
             base_url: "https://api.jikan.moe/v4".to_string(),
             rate_limiter: Arc::new(RateLimiter::new(3.0)), // 3 requests per second for Jikan (official limit)
+            cache,
         })
     }
 
@@ -46,6 +54,89 @@ impl JikanClient {
             ));
         }
 
+        // Create cache key that includes limit to ensure proper caching
+        let cache_query = format!("{}:limit:{}", query.trim(), limit.min(25));
+
+        // Check cache first
+        if let Some(cached_results) = self
+            .cache
+            .get_search_results(&AnimeProvider::Jikan, &cache_query)
+            .await
+        {
+            debug!("Jikan search cache hit for query: {}", query);
+            return Ok(cached_results);
+        }
+
+        // Check if request is already in progress to prevent duplicate concurrent requests
+        if self
+            .cache
+            .is_request_in_progress(&AnimeProvider::Jikan, &cache_query)
+            .await
+        {
+            debug!(
+                "Jikan search already in progress for query: {}, waiting for result",
+                query
+            );
+
+            // Wait a bit and check cache again
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            if let Some(cached_results) = self
+                .cache
+                .get_search_results(&AnimeProvider::Jikan, &cache_query)
+                .await
+            {
+                return Ok(cached_results);
+            }
+
+            // If still not available, proceed with the request (fallback)
+            warn!("Jikan search in progress but no cached result found, proceeding with API call");
+        }
+
+        // Mark request as in progress
+        self.cache
+            .mark_request_in_progress(&AnimeProvider::Jikan, &cache_query)
+            .await;
+
+        // Perform API call
+        let api_result = self.search_anime_uncached(query, limit).await;
+
+        // Remove in-progress marker
+        self.cache
+            .remove_request_in_progress(&AnimeProvider::Jikan, &cache_query)
+            .await;
+
+        match api_result {
+            Ok(results) => {
+                // Cache successful results
+                if let Err(e) = self
+                    .cache
+                    .cache_search_results(&AnimeProvider::Jikan, &cache_query, results.clone())
+                    .await
+                {
+                    warn!("Failed to cache Jikan search results: {}", e);
+                }
+                debug!(
+                    "Jikan search API call completed and cached for query: {}",
+                    query
+                );
+                Ok(results)
+            }
+            Err(e) => {
+                // Don't cache error responses, just return the error
+                debug!(
+                    "Jikan search API call failed for query: {}, error: {}",
+                    query, e
+                );
+                Err(e)
+            }
+        }
+    }
+
+    async fn search_anime_uncached(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> AppResult<Vec<AnimeDetailed>> {
         self.rate_limiter.wait().await?;
 
         let params = JikanSearchParams {
@@ -183,6 +274,19 @@ impl JikanClient {
                 status
             ))),
         }
+    }
+
+    /// Get cache statistics for monitoring
+    pub async fn get_cache_stats(
+        &self,
+    ) -> crate::infrastructure::shared::provider_cache::CacheStats {
+        self.cache.get_stats().await
+    }
+
+    /// Clear all cached data
+    pub async fn clear_cache(&self) {
+        self.cache.clear().await;
+        info!("Jikan client cache cleared");
     }
 }
 

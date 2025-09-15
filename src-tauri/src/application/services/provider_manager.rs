@@ -4,7 +4,10 @@ use crate::{
         traits::anime_provider_client::{AnimeProviderClient, RateLimiterInfo},
         value_objects::AnimeProvider,
     },
-    infrastructure::external::{anilist::AniListClient, jikan::JikanClient},
+    infrastructure::{
+        external::{anilist::AniListClient, jikan::JikanClient},
+        shared::provider_cache::ProviderCache,
+    },
     log_debug,
     shared::errors::{AppError, AppResult},
     shared::utils::logger::LogContext,
@@ -12,6 +15,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::{collections::HashMap, sync::Arc};
+use tracing::info;
 
 /// Configuration for a single anime provider (no rate limit duplication)
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -38,6 +42,8 @@ pub struct ProviderManager {
     clients: HashMap<AnimeProvider, Arc<dyn AnimeProviderClient>>,
     /// Primary provider preference
     primary_provider: AnimeProvider,
+    /// Shared cache instance for all providers
+    cache: Arc<ProviderCache>,
 }
 
 impl ProviderManager {
@@ -70,12 +76,26 @@ impl ProviderManager {
         configs.insert(AnimeProvider::Jikan, jikan_config);
         configs.insert(AnimeProvider::AniList, anilist_config);
 
-        // Initialize clients with trait-based approach (single source of truth for rate limits)
+        // Create shared cache for all providers
+        let shared_cache = Arc::new(ProviderCache::new(
+            5,    // 5 minutes default TTL
+            2,    // 2 minutes TTL for not found results
+            2000, // 2000 max entries across all providers
+        ));
+
+        info!("Initialized shared provider cache with 5min TTL and 2000 max entries");
+
+        // Initialize clients with shared cache
         let mut clients: HashMap<AnimeProvider, Arc<dyn AnimeProviderClient>> = HashMap::new();
 
-        let jikan_client = Arc::new(JikanClient::new().expect("Failed to initialize Jikan client"));
-        let anilist_client =
-            Arc::new(AniListClient::new().expect("Failed to initialize AniList client"));
+        let jikan_client = Arc::new(
+            JikanClient::with_cache(shared_cache.clone())
+                .expect("Failed to initialize Jikan client with cache"),
+        );
+        let anilist_client = Arc::new(
+            AniListClient::with_cache(shared_cache.clone())
+                .expect("Failed to initialize AniList client with cache"),
+        );
 
         clients.insert(AnimeProvider::Jikan, jikan_client);
         clients.insert(AnimeProvider::AniList, anilist_client);
@@ -84,6 +104,7 @@ impl ProviderManager {
             configs,
             clients,
             primary_provider: AnimeProvider::AniList,
+            cache: shared_cache,
         }
     }
 
@@ -259,6 +280,60 @@ impl ProviderManager {
                 provider
             )))
         }
+    }
+
+    /// Get comprehensive cache statistics across all providers
+    pub async fn get_cache_stats(
+        &self,
+    ) -> crate::infrastructure::shared::provider_cache::CacheStats {
+        self.cache.get_stats().await
+    }
+
+    /// Clear all cached data across all providers
+    pub async fn clear_all_caches(&self) {
+        self.cache.clear().await;
+        info!("All provider caches cleared via ProviderManager");
+    }
+
+    /// Warm up cache with common search terms
+    pub async fn warm_cache(&self, common_queries: Vec<&str>) -> AppResult<()> {
+        info!("Warming cache with {} common queries", common_queries.len());
+
+        for provider in [AnimeProvider::Jikan, AnimeProvider::AniList] {
+            if let Some(config) = self.configs.get(&provider) {
+                if config.enabled {
+                    if let Err(e) = self
+                        .cache
+                        .warm_cache(&provider, common_queries.clone())
+                        .await
+                    {
+                        LogContext::error_with_context(
+                            &e,
+                            &format!("Failed to warm cache for provider {:?}", provider),
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Check if providers are sharing the cache correctly (for debugging)
+    pub async fn validate_shared_cache(&self) -> bool {
+        // This method helps verify that all providers are using the same cache instance
+        let stats_before = self.cache.get_stats().await;
+
+        // Try to cache a test entry through one provider
+        let _ = self
+            .cache
+            .cache_search_results(&AnimeProvider::Jikan, "test_shared_cache", vec![])
+            .await;
+
+        // Check if the cache was updated
+        let stats_after = self.cache.get_stats().await;
+
+        stats_after.entries_count > stats_before.entries_count
     }
 }
 

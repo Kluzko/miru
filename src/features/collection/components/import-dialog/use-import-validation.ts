@@ -1,7 +1,29 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { commands } from "@/types";
 import type { ValidationResult } from "@/types";
+
+// Custom debounce hook for performance optimization
+// @ts-ignore - unused for now, will be used for future UI optimizations
+function useDebounce<T extends (...args: any[]) => void>(
+  callback: T,
+  delay: number,
+): T {
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  return useCallback(
+    ((...args: any[]) => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+
+      timeoutRef.current = setTimeout(() => {
+        callback(...args);
+      }, delay);
+    }) as T,
+    [callback, delay],
+  );
+}
 
 interface ValidationProgress {
   current: number;
