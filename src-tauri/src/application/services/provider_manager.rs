@@ -5,7 +5,9 @@ use crate::{
         value_objects::AnimeProvider,
     },
     infrastructure::external::{anilist::AniListClient, jikan::JikanClient},
+    log_debug,
     shared::errors::{AppError, AppResult},
+    shared::utils::logger::LogContext,
 };
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -162,14 +164,14 @@ impl ProviderManager {
 
             match self.search_with_provider(&provider, query, limit).await {
                 Ok(results) if !results.is_empty() => {
-                    println!("DEBUG: Used fallback provider {:?} for search", provider);
+                    log_debug!("Used fallback provider {:?} for search", provider);
                     return Ok(results);
                 }
                 Ok(_) => continue,
                 Err(e) => {
-                    println!(
-                        "DEBUG: Provider {:?} failed for search '{}': {}",
-                        provider, query, e
+                    LogContext::error_with_context(
+                        &e,
+                        &format!("Provider {:?} failed for search '{}'", provider, query),
                     );
                     continue;
                 }

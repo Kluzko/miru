@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { Anime } from "@/types";
+import type { AnimeDetailed } from "@/types";
 import type { SortBy, SortOrder, GroupBy } from "./use-anime-filters";
 
 interface ProcessingOptions {
@@ -18,7 +18,7 @@ interface ProcessingOptions {
 }
 
 export function useAnimeProcessing(
-  animes: Anime[],
+  animes: AnimeDetailed[],
   options: ProcessingOptions,
 ) {
   const filteredAndSortedAnimes = useMemo(() => {
@@ -191,7 +191,7 @@ export function useAnimeProcessing(
       return { All: filteredAndSortedAnimes };
     }
 
-    const groups: Record<string, Anime[]> = {};
+    const groups: Record<string, AnimeDetailed[]> = {};
 
     filteredAndSortedAnimes.forEach((anime) => {
       let groupKey: string;

@@ -386,13 +386,18 @@ impl CollectionRepositoryImpl {
 
             let out = collection_models
                 .into_iter()
-                .map(|m| Collection {
-                    id: m.id,
-                    name: m.name,
-                    description: m.description,
-                    anime_ids: by_coll.remove(&m.id).unwrap_or_default(),
-                    created_at: m.created_at,
-                    updated_at: m.updated_at,
+                .map(|m| {
+                    let anime_ids = by_coll.remove(&m.id).unwrap_or_default();
+                    let anime_count = anime_ids.len() as i32;
+                    Collection {
+                        id: m.id,
+                        name: m.name,
+                        description: m.description,
+                        anime_ids,
+                        anime_count: Some(anime_count),
+                        created_at: m.created_at,
+                        updated_at: m.updated_at,
+                    }
                 })
                 .collect();
 

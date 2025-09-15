@@ -54,7 +54,7 @@ export function ImportDialog({
     setStep,
   } = useImportValidation();
 
-  const { isImporting, handleImport } = useImportExecution();
+  const { isImporting, importProgress, handleImport } = useImportExecution();
 
   const {
     selectedExisting,
@@ -364,9 +364,11 @@ export function ImportDialog({
                     {isImporting ? (
                       <>
                         <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                        {collectionId
-                          ? "Adding to Collection..."
-                          : "Importing..."}
+                        {importProgress
+                          ? `${importProgress.current_title} (${importProgress.processed}/${importProgress.total})`
+                          : collectionId
+                            ? "Adding to Collection..."
+                            : "Importing..."}
                       </>
                     ) : (
                       <>

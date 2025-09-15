@@ -109,18 +109,63 @@ export function useAddAnimeToCollection() {
   return useMutation({
     mutationFn: (data: AddAnimeToCollectionRequest) =>
       collectionApi.addAnime(data),
-    onSuccess: (_, variables) => {
-      // Invalidate anime list for this collection
+    onMutate: async (variables) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({
+        queryKey: collectionKeys.detail(variables.collection_id),
+      });
+      await queryClient.cancelQueries({
+        queryKey: collectionKeys.anime(variables.collection_id),
+      });
+
+      // Snapshot previous values for rollback
+      const previousCollection = queryClient.getQueryData(
+        collectionKeys.detail(variables.collection_id),
+      );
+      const previousCollections = queryClient.getQueryData(collectionKeys.all);
+
+      // Optimistically update collection anime count
+      queryClient.setQueryData(
+        collectionKeys.detail(variables.collection_id),
+        (old: Collection | undefined) =>
+          old ? { ...old, animeCount: (old.animeCount || 0) + 1 } : old,
+      );
+
+      // Optimistically update collections list
+      queryClient.setQueryData(
+        collectionKeys.all,
+        (old: Collection[] | undefined) =>
+          old?.map((c) =>
+            c.id === variables.collection_id
+              ? { ...c, animeCount: (c.animeCount || 0) + 1 }
+              : c,
+          ),
+      );
+
+      return { previousCollection, previousCollections };
+    },
+    onError: (_, variables, context) => {
+      // Rollback on error
+      if (context?.previousCollection) {
+        queryClient.setQueryData(
+          collectionKeys.detail(variables.collection_id),
+          context.previousCollection,
+        );
+      }
+      if (context?.previousCollections) {
+        queryClient.setQueryData(
+          collectionKeys.all,
+          context.previousCollections,
+        );
+      }
+    },
+    onSettled: (_, __, variables) => {
+      // Refetch to ensure consistency
       queryClient.invalidateQueries({
         queryKey: collectionKeys.anime(variables.collection_id),
       });
-      // Invalidate collection details to update anime count
       queryClient.invalidateQueries({
         queryKey: collectionKeys.detail(variables.collection_id),
-      });
-      // Invalidate all collections to update counts in lists
-      queryClient.invalidateQueries({
-        queryKey: collectionKeys.all,
       });
     },
   });
@@ -132,9 +177,63 @@ export function useRemoveAnimeFromCollection() {
   return useMutation({
     mutationFn: (data: { collection_id: string; anime_id: string }) =>
       collectionApi.removeAnime(data),
-    onSuccess: (_, variables) => {
+    onMutate: async (variables) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({
+        queryKey: collectionKeys.detail(variables.collection_id),
+      });
+      await queryClient.cancelQueries({
+        queryKey: collectionKeys.anime(variables.collection_id),
+      });
+
+      // Snapshot previous values
+      const previousCollection = queryClient.getQueryData(
+        collectionKeys.detail(variables.collection_id),
+      );
+      const previousCollections = queryClient.getQueryData(collectionKeys.all);
+
+      // Optimistically decrease anime count
+      queryClient.setQueryData(
+        collectionKeys.detail(variables.collection_id),
+        (old: Collection | undefined) =>
+          old
+            ? { ...old, animeCount: Math.max((old.animeCount || 1) - 1, 0) }
+            : old,
+      );
+
+      queryClient.setQueryData(
+        collectionKeys.all,
+        (old: Collection[] | undefined) =>
+          old?.map((c) =>
+            c.id === variables.collection_id
+              ? { ...c, animeCount: Math.max((c.animeCount || 1) - 1, 0) }
+              : c,
+          ),
+      );
+
+      return { previousCollection, previousCollections };
+    },
+    onError: (_, variables, context) => {
+      // Rollback on error
+      if (context?.previousCollection) {
+        queryClient.setQueryData(
+          collectionKeys.detail(variables.collection_id),
+          context.previousCollection,
+        );
+      }
+      if (context?.previousCollections) {
+        queryClient.setQueryData(
+          collectionKeys.all,
+          context.previousCollections,
+        );
+      }
+    },
+    onSettled: (_, __, variables) => {
       queryClient.invalidateQueries({
         queryKey: collectionKeys.anime(variables.collection_id),
+      });
+      queryClient.invalidateQueries({
+        queryKey: collectionKeys.detail(variables.collection_id),
       });
     },
   });
@@ -146,8 +245,27 @@ export function useImportAnimeBatch() {
   return useMutation({
     mutationFn: (data: ImportAnimeBatchRequest) =>
       collectionApi.importBatch(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: collectionKeys.all });
+    onSuccess: (_, variables) => {
+      // Only invalidate specific collection if targeting one
+      if (variables.collection_id) {
+        queryClient.invalidateQueries({
+          queryKey: collectionKeys.detail(variables.collection_id),
+        });
+        queryClient.invalidateQueries({
+          queryKey: collectionKeys.anime(variables.collection_id),
+        });
+      }
+
+      // Invalidate anime search results since new anime may have been added
+      queryClient.invalidateQueries({
+        queryKey: ["anime", "search"],
+        refetchType: "none", // Don't refetch automatically, let user trigger
+      });
+
+      // Update collections list to reflect new counts
+      queryClient.invalidateQueries({
+        queryKey: collectionKeys.all,
+      });
     },
   });
 }
@@ -157,13 +275,30 @@ export function useImportFromCsv() {
 
   return useMutation({
     mutationFn: (data: ImportFromCsvRequest) => collectionApi.importCsv(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: collectionKeys.all });
+    onSuccess: (_, variables) => {
+      // Similar optimizations as batch import
+      if (variables.collection_id) {
+        queryClient.invalidateQueries({
+          queryKey: collectionKeys.detail(variables.collection_id),
+        });
+        queryClient.invalidateQueries({
+          queryKey: collectionKeys.anime(variables.collection_id),
+        });
+      }
+
+      queryClient.invalidateQueries({
+        queryKey: ["anime", "search"],
+        refetchType: "none",
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: collectionKeys.all,
+      });
     },
   });
 }
 
-// Hook for adding multiple anime to a collection after import
+// Optimized hook for adding multiple anime to a collection
 export function useAddMultipleAnimeToCollection() {
   const queryClient = useQueryClient();
 
@@ -171,42 +306,163 @@ export function useAddMultipleAnimeToCollection() {
     mutationFn: async ({
       collectionId,
       animeIds,
+      onProgress,
     }: {
       collectionId: string;
       animeIds: string[];
+      onProgress?: (progress: {
+        current: number;
+        total: number;
+        successes: number;
+        failures: number;
+      }) => void;
     }) => {
-      const results = await Promise.allSettled(
-        animeIds.map((animeId) =>
-          collectionApi.addAnime({
-            collection_id: collectionId,
-            anime_id: animeId,
-            user_score: null,
-            notes: null,
-          }),
-        ),
+      const BATCH_SIZE = 5; // Process in smaller batches to avoid overwhelming the backend
+      const total = animeIds.length;
+      let successes = 0;
+      let failures = 0;
+      let current = 0;
+
+      const failedItems: Array<{ animeId: string; error: string }> = [];
+
+      // Process in batches
+      for (let i = 0; i < animeIds.length; i += BATCH_SIZE) {
+        const batch = animeIds.slice(i, i + BATCH_SIZE);
+
+        const batchResults = await Promise.allSettled(
+          batch.map((animeId) =>
+            collectionApi.addAnime({
+              collection_id: collectionId,
+              anime_id: animeId,
+              user_score: null,
+              notes: null,
+            }),
+          ),
+        );
+
+        // Process batch results
+        batchResults.forEach((result, index) => {
+          current++;
+          if (result.status === "fulfilled") {
+            successes++;
+          } else {
+            failures++;
+            failedItems.push({
+              animeId: batch[index],
+              error: result.reason?.message || "Unknown error",
+            });
+          }
+        });
+
+        // Report progress
+        onProgress?.({ current, total, successes, failures });
+
+        // Small delay between batches to be respectful to the backend
+        if (i + BATCH_SIZE < animeIds.length) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+      }
+
+      return {
+        successes,
+        failures,
+        total,
+        failedItems: failures > 0 ? failedItems : undefined,
+      };
+    },
+    onMutate: async (variables) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({
+        queryKey: collectionKeys.detail(variables.collectionId),
+      });
+
+      // Optimistically update collection count
+      const previousCollection = queryClient.getQueryData(
+        collectionKeys.detail(variables.collectionId),
+      );
+      const previousCollections = queryClient.getQueryData(collectionKeys.all);
+
+      queryClient.setQueryData(
+        collectionKeys.detail(variables.collectionId),
+        (old: Collection | undefined) =>
+          old
+            ? {
+                ...old,
+                animeCount: (old.animeCount || 0) + variables.animeIds.length,
+              }
+            : old,
       );
 
-      const successes = results.filter(
-        (result) => result.status === "fulfilled",
-      ).length;
-      const failures = results.filter(
-        (result) => result.status === "rejected",
-      ).length;
+      queryClient.setQueryData(
+        collectionKeys.all,
+        (old: Collection[] | undefined) =>
+          old?.map((c) =>
+            c.id === variables.collectionId
+              ? {
+                  ...c,
+                  animeCount: (c.animeCount || 0) + variables.animeIds.length,
+                }
+              : c,
+          ),
+      );
 
-      return { successes, failures, total: animeIds.length };
+      return { previousCollection, previousCollections };
     },
-    onSuccess: (_, variables) => {
-      // Invalidate anime list for this collection
+    onSuccess: (result, variables) => {
+      // If some operations failed, adjust the optimistic update
+      const actualAdditions = result.successes;
+      const optimisticAdditions = variables.animeIds.length;
+      const difference = optimisticAdditions - actualAdditions;
+
+      if (difference > 0) {
+        // We were too optimistic, reduce the count
+        queryClient.setQueryData(
+          collectionKeys.detail(variables.collectionId),
+          (old: Collection | undefined) =>
+            old
+              ? {
+                  ...old,
+                  animeCount: (old.animeCount || difference) - difference,
+                }
+              : old,
+        );
+
+        queryClient.setQueryData(
+          collectionKeys.all,
+          (old: Collection[] | undefined) =>
+            old?.map((c) =>
+              c.id === variables.collectionId
+                ? {
+                    ...c,
+                    animeCount: (c.animeCount || difference) - difference,
+                  }
+                : c,
+            ),
+        );
+      }
+    },
+    onError: (_, variables, context) => {
+      // Rollback optimistic updates on complete failure
+      if (context?.previousCollection) {
+        queryClient.setQueryData(
+          collectionKeys.detail(variables.collectionId),
+          context.previousCollection,
+        );
+      }
+      if (context?.previousCollections) {
+        queryClient.setQueryData(
+          collectionKeys.all,
+          context.previousCollections,
+        );
+      }
+    },
+    onSettled: (_, __, variables) => {
+      // Always refetch to ensure data consistency
       queryClient.invalidateQueries({
         queryKey: collectionKeys.anime(variables.collectionId),
       });
-      // Invalidate collection details to update anime count
       queryClient.invalidateQueries({
         queryKey: collectionKeys.detail(variables.collectionId),
-      });
-      // Invalidate all collections to update counts in lists
-      queryClient.invalidateQueries({
-        queryKey: collectionKeys.all,
       });
     },
   });

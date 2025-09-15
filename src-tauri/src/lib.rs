@@ -3,11 +3,14 @@ mod domain;
 mod infrastructure;
 mod shared;
 
+// Log macros are exported by the logger module
+
 use application::{
     commands::*,
     services::{AnimeService, CollectionService, ImportService, ProviderManager},
 };
 use infrastructure::database::{repositories::*, Database};
+// use shared::utils::logger::{LogContext, TimedOperation};
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -20,8 +23,8 @@ pub fn run() {
     // Load environment variables
     dotenvy::dotenv().ok();
 
-    // Initialize logging
-    env_logger::init();
+    // Initialize structured logging
+    shared::utils::logger::init_logger();
 
     // 1) Build the specta builder with all commands
     let specta_builder = SpectaBuilder::<tauri::Wry>::new().commands(collect_commands![

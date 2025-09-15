@@ -7,6 +7,9 @@ use diesel::prelude::*;
 use tokio::task;
 use uuid::Uuid;
 
+// use crate::shared::utils::logger::{LogContext, TimedOperation};
+use crate::{log_debug, log_error, log_warn};
+
 use crate::domain::{
     entities::{
         anime_detailed::{AiredDates, AnimeDetailed},
@@ -357,9 +360,10 @@ impl AnimeRepository for AnimeRepositoryImpl {
     }
 
     async fn save(&self, anime: &AnimeDetailed) -> AppResult<AnimeDetailed> {
-        println!(
-            "DEBUG: Repository saving anime: {} (ID: {})",
-            anime.title.main, anime.id
+        log_debug!(
+            "Repository saving anime: {} (ID: {})",
+            anime.title.main,
+            anime.id
         );
 
         Validator::validate_anime_title(&anime.title.main)?;
@@ -367,24 +371,21 @@ impl AnimeRepository for AnimeRepositoryImpl {
             Validator::validate_score(score)?;
         }
 
-        println!("DEBUG: Calling upsert_anime for: {}", anime.title.main);
+        log_debug!("Calling upsert_anime for: {}", anime.title.main);
         let saved_model = self.upsert_anime(anime).await?;
 
-        println!("DEBUG: Upserting genres for anime: {}", anime.title.main);
+        log_debug!("Upserting genres for anime: {}", anime.title.main);
         self.upsert_genres(saved_model.id, &anime.genres).await?;
 
-        println!("DEBUG: Upserting studios for anime: {}", anime.title.main);
+        log_debug!("Upserting studios for anime: {}", anime.title.main);
         self.upsert_studios(saved_model.id, &anime.studios).await?;
 
-        println!(
-            "DEBUG: Upserting quality metrics for anime: {}",
-            anime.title.main
-        );
+        log_debug!("Upserting quality metrics for anime: {}", anime.title.main);
         self.upsert_quality_metrics(saved_model.id, &anime.quality_metrics)
             .await?;
 
-        println!(
-            "DEBUG: Building final anime result from saved data: {}",
+        log_debug!(
+            "Building final anime result from saved data: {}",
             anime.title.main
         );
 
@@ -396,9 +397,10 @@ impl AnimeRepository for AnimeRepositoryImpl {
             Some(anime.quality_metrics.clone()), // We already have the metrics
         );
 
-        println!(
-            "DEBUG: Successfully built anime result: {} (ID: {})",
-            result.title.main, result.id
+        log_debug!(
+            "Successfully built anime result: {} (ID: {})",
+            result.title.main,
+            result.id
         );
         Ok(result)
     }
@@ -820,7 +822,7 @@ impl AnimeRepositoryImpl {
                     .execute(conn)?;
 
                 for g in genres {
-                    println!("DEBUG: Processing genre: {}", g.name);
+                    log_debug!("Processing genre: {}", g.name);
 
                     let new_g = NewGenre {
                         id: g.id,
@@ -837,11 +839,11 @@ impl AnimeRepositoryImpl {
                         .get_result::<Uuid>(conn)
                     {
                         Ok(id) => {
-                            println!("DEBUG: Successfully upserted genre: {} (ID: {})", g.name, id);
+                            log_debug!("Successfully upserted genre: {} (ID: {})", g.name, id);
                             id
                         }
                         Err(e) => {
-                            println!("DEBUG: Genre upsert failed, trying fallback for '{}': {}", g.name, e);
+                            log_warn!("Genre upsert failed, trying fallback for '{}': {}", g.name, e);
                             // Fallback: find existing genre by name
                             match genres::table
                                 .filter(genres::name.eq(&g.name))
@@ -849,11 +851,11 @@ impl AnimeRepositoryImpl {
                                 .first::<Uuid>(conn)
                             {
                                 Ok(existing_id) => {
-                                    println!("DEBUG: Found existing genre: {} (ID: {})", g.name, existing_id);
+                                    log_debug!("Found existing genre: {} (ID: {})", g.name, existing_id);
                                     existing_id
                                 }
                                 Err(find_err) => {
-                                    println!("DEBUG: Failed to find genre '{}': {}", g.name, find_err);
+                                    log_error!("Failed to find genre '{}': {}", g.name, find_err);
                                     return Err(AppError::DatabaseError(format!(
                                         "Failed to upsert genre '{}': insert failed: {}, find failed: {}",
                                         g.name, e, find_err
@@ -869,10 +871,10 @@ impl AnimeRepositoryImpl {
                         .execute(conn)
                     {
                         Ok(rows_affected) => {
-                            println!("DEBUG: Associated genre {} with anime (rows affected: {})", g.name, rows_affected);
+                            log_debug!("Associated genre {} with anime (rows affected: {})", g.name, rows_affected);
                         }
                         Err(e) => {
-                            println!("DEBUG: Failed to associate genre {} with anime: {}", g.name, e);
+                            log_error!("Failed to associate genre {} with anime: {}", g.name, e);
                             return Err(AppError::DatabaseError(format!(
                                 "Failed to associate genre '{}' with anime: {}", g.name, e
                             )));

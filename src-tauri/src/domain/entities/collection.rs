@@ -10,6 +10,7 @@ pub struct Collection {
     pub name: String,
     pub description: Option<String>,
     pub anime_ids: Vec<Uuid>,
+    pub anime_count: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -32,6 +33,7 @@ impl Collection {
             name,
             description: None,
             anime_ids: Vec::new(),
+            anime_count: None,
             created_at: now,
             updated_at: now,
         }

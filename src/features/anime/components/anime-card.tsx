@@ -1,14 +1,14 @@
 import { Star, Calendar, Play } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import type { Anime } from "@/types";
+import type { AnimeDetailed } from "@/types";
 import { cn } from "@/lib/utils";
 import { getTierInfo } from "@/lib/anime-utils";
 import { getPreferredTitle } from "@/lib/title-utils";
 import { useSettingsStore } from "@/stores/settings-store";
 
 interface AnimeCardProps {
-  anime: Anime;
+  anime: AnimeDetailed;
   onClick?: () => void;
   className?: string;
 }

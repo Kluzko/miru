@@ -21,14 +21,14 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Anime } from "@/types";
+import type { AnimeDetailed } from "@/types";
 
 interface AnimeDrawerProps {
-  anime: Anime | null;
+  anime: AnimeDetailed | null;
   isOpen: boolean;
   onClose: () => void;
   onRemove?: (animeId: string) => void;
-  onViewDetails?: (anime: Anime) => void;
+  onViewDetails?: (anime: AnimeDetailed) => void;
 }
 
 export function AnimeDrawer({

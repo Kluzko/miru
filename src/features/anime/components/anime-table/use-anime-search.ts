@@ -1,9 +1,9 @@
 import { useState, useMemo, useCallback } from "react";
-import type { Anime } from "@/types";
+import type { AnimeDetailed } from "@/types";
 import { getPreferredTitle } from "@/lib/title-utils";
 import { useSettingsStore } from "@/stores/settings-store";
 
-export function useAnimeSearch(animes: Anime[]) {
+export function useAnimeSearch(animes: AnimeDetailed[]) {
   const { preferredTitleLanguage } = useSettingsStore();
   const [searchTerm, setSearchTerm] = useState("");
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);

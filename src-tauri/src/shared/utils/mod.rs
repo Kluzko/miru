@@ -1,3 +1,4 @@
+pub mod logger;
 mod rate_limiter;
 mod validation;
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import type { Anime } from "@/types";
+import type { AnimeDetailed } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +30,6 @@ import {
   Grid3X3,
   List,
   ChevronRight,
-  Clock,
   Heart,
   Filter,
   X,
@@ -45,8 +44,8 @@ import { useAnimeProcessing } from "./use-anime-processing";
 import { AnimeDrawer } from "./anime-drawer";
 
 interface AnimeTableProps {
-  animes: Anime[];
-  onAnimeClick?: (anime: Anime) => void;
+  animes: AnimeDetailed[];
+  onAnimeClick?: (anime: AnimeDetailed) => void;
   onRemoveAnime?: (animeId: string) => void;
   selectedAnimes?: Set<string>;
   onSelectionChange?: (selected: Set<string>) => void;
@@ -62,7 +61,9 @@ export function AnimeTable({
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [sortingExpanded, setSortingExpanded] = useState(false);
-  const [selectedAnime, setSelectedAnime] = useState<Anime | null>(null);
+  const [selectedAnime, setSelectedAnime] = useState<AnimeDetailed | null>(
+    null,
+  );
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -159,7 +160,7 @@ export function AnimeTable({
     setExpandedGroups(newExpanded);
   };
 
-  const handleAnimeClick = (anime: Anime) => {
+  const handleAnimeClick = (anime: AnimeDetailed) => {
     setSelectedAnime(anime);
     setDrawerOpen(true);
     onAnimeClick?.(anime);
@@ -170,7 +171,7 @@ export function AnimeTable({
     return new Date(dateString).getFullYear().toString();
   };
 
-  const renderAnimeItem = (anime: Anime, index: number) => {
+  const renderAnimeItem = (anime: AnimeDetailed, index: number) => {
     const displayTitle = getPreferredTitle(anime.title, preferredTitleLanguage);
 
     if (viewMode === "compact") {

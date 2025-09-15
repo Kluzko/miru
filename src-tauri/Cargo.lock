@@ -2389,6 +2389,7 @@ dependencies = [
  "tauri-specta",
  "thiserror 2.0.16",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "uuid",

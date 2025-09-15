@@ -28,7 +28,7 @@ import { Slider } from "@/components/ui/slider";
 import { MultiSelect } from "@/components/common/multi-select";
 
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
-import type { Anime } from "@/types";
+import type { AnimeDetailed } from "@/types";
 
 export function ExplorePage() {
   const navigate = useNavigate();
@@ -69,7 +69,7 @@ export function ExplorePage() {
 
   const { data: results = [], isLoading } = useAnimeSearch(debouncedQuery);
 
-  const handleAnimeClick = (anime: Anime) => {
+  const handleAnimeClick = (anime: AnimeDetailed) => {
     navigate(`/anime/${anime.id}`);
   };
 

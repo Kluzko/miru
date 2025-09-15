@@ -3,6 +3,8 @@ use crate::domain::{
     entities::AnimeDetailed, repositories::AnimeRepository, services::ScoreCalculator,
 };
 use crate::shared::errors::AppResult;
+use crate::shared::utils::logger::LogContext;
+use crate::{log_debug, log_info};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -57,8 +59,8 @@ impl AnimeService {
         let provider_results = provider_manager.search_anime(query, 10).await?;
 
         if !provider_results.is_empty() {
-            println!(
-                "DEBUG: Database search yielded {} results, trying external APIs for '{}'",
+            log_debug!(
+                "Database search yielded {} results, trying external APIs for '{}'",
                 db_results.len(),
                 query
             );
@@ -66,18 +68,21 @@ impl AnimeService {
             // Save new anime to database (the repository will handle duplicates)
             for anime in &provider_results {
                 match self.anime_repo.save(anime).await {
-                    Ok(_) => println!(
-                        "DEBUG: Successfully saved anime from external API: {}",
+                    Ok(_) => log_info!(
+                        "Successfully saved anime from external API: {}",
                         anime.title.main
                     ),
-                    Err(e) => println!("DEBUG: Failed to save anime {}: {}", anime.title.main, e),
+                    Err(e) => LogContext::error_with_context(
+                        &e,
+                        &format!("Failed to save anime {}", anime.title.main),
+                    ),
                 }
             }
 
             // Search again to get all results (including newly saved ones)
             let combined_results = self.anime_repo.search(query, 20).await?;
-            println!(
-                "DEBUG: After external API search and save, found {} total results",
+            log_info!(
+                "After external API search and save, found {} total results",
                 combined_results.len()
             );
             return Ok(combined_results);
@@ -103,7 +108,10 @@ impl AnimeService {
                 Ok(saved) => saved_anime.push(saved),
                 Err(e) => {
                     // Log but don't fail the entire operation
-                    eprintln!("Warning: Failed to save anime {}: {}", anime.title, e);
+                    LogContext::error_with_context(
+                        &e,
+                        &format!("Failed to save anime {}", anime.title),
+                    );
                     // Still include the anime in results even if save failed
                     saved_anime.push(anime);
                 }
@@ -132,7 +140,10 @@ impl AnimeService {
                 Ok(saved) => saved_anime.push(saved),
                 Err(e) => {
                     // Log but don't fail the entire operation
-                    eprintln!("Warning: Failed to save anime {}: {}", anime.title, e);
+                    LogContext::error_with_context(
+                        &e,
+                        &format!("Failed to save anime {}", anime.title),
+                    );
                     // Still include the anime in results even if save failed
                     saved_anime.push(anime);
                 }

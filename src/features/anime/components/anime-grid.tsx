@@ -1,9 +1,9 @@
 import { AnimeCard } from "./anime-card";
-import type { Anime } from "@/types";
+import type { AnimeDetailed } from "@/types";
 
 interface AnimeGridProps {
-  anime: Anime[];
-  onAnimeClick?: (anime: Anime) => void;
+  anime: AnimeDetailed[];
+  onAnimeClick?: (anime: AnimeDetailed) => void;
   emptyMessage?: string;
 }
 

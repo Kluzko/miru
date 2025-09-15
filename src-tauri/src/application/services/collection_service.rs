@@ -3,6 +3,8 @@ use crate::domain::{
     repositories::{AnimeRepository, CollectionRepository},
 };
 use crate::shared::errors::{AppError, AppResult};
+// use crate::shared::utils::logger::{LogContext, TimedOperation};
+use crate::{log_debug, log_info};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -123,9 +125,12 @@ impl CollectionService {
         user_score: Option<f32>,
         notes: Option<String>,
     ) -> AppResult<()> {
-        println!(
-            "DEBUG: Adding anime {} to collection {} (score: {:?}, notes: {:?})",
-            anime_id, collection_id, user_score, notes
+        log_debug!(
+            "Adding anime {} to collection {} (score: {:?}, notes: {:?})",
+            anime_id,
+            collection_id,
+            user_score,
+            notes
         );
 
         // Validate score if provided
@@ -157,19 +162,20 @@ impl CollectionService {
         }
 
         // Add to collection
-        println!("DEBUG: Calling repository to add anime to collection");
+        log_debug!("Calling repository to add anime to collection");
         self.collection_repo
             .add_anime_to_collection(collection_id, anime_id, user_score, notes)
             .await?;
 
         // Update collection anime_ids
-        println!("DEBUG: Updating collection anime_ids list");
+        log_debug!("Updating collection anime_ids list");
         collection.add_anime(*anime_id);
         let _ = self.collection_repo.update(&collection).await;
 
-        println!(
-            "DEBUG: Successfully added anime {} to collection {}",
-            anime_id, collection_id
+        log_info!(
+            "Successfully added anime {} to collection {}",
+            anime_id,
+            collection_id
         );
         Ok(())
     }

@@ -1,17 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
-import { commands } from "@/types/bindings";
 import type { AnimeProvider, ProviderStatus } from "@/types";
+import { commands } from "@/types";
+import { Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
 
 const providerInfo: Record<
   AnimeProvider,

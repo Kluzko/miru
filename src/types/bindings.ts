@@ -303,7 +303,7 @@ native: string | null;
  */
 synonyms: string[] }
 export type AnimeType = "TV" | "Movie" | "OVA" | "Special" | "ONA" | "Music" | "Unknown"
-export type Collection = { id: string; name: string; description: string | null; animeIds: string[]; createdAt: string; updatedAt: string }
+export type Collection = { id: string; name: string; description: string | null; animeIds: string[]; animeCount: number | null; createdAt: string; updatedAt: string }
 export type CreateCollectionRequest = { name: string; description: string | null }
 export type DeleteCollectionRequest = { id: string }
 export type ExistingAnime = { input_title: string; matched_title: string; matched_field: string; anime: AnimeDetailed }
@@ -314,9 +314,9 @@ export type GetCollectionRequest = { id: string }
 export type GetProviderRateLimitRequest = { provider: AnimeProvider }
 export type GetSeasonalAnimeRequest = { year: number; season: string; page: number }
 export type GetTopAnimeRequest = { page: number; limit: number }
-export type ImportAnimeBatchRequest = { titles: string[] }
+export type ImportAnimeBatchRequest = { titles: string[]; collection_id: string | null }
 export type ImportError = { title: string; reason: string }
-export type ImportFromCsvRequest = { csv_content: string }
+export type ImportFromCsvRequest = { csv_content: string; collection_id: string | null }
 export type ImportResult = { imported: ImportedAnime[]; failed: ImportError[]; skipped: SkippedAnime[]; total: number }
 export type ImportValidatedAnimeRequest = { validated_anime: ValidatedAnime[] }
 export type ImportedAnime = { title: string; primary_external_id: string; provider: AnimeProvider; id: string }

@@ -3,6 +3,7 @@ use crate::application::services::import_service::{
     ImportResult, ImportService, ValidatedAnime, ValidationResult,
 };
 use crate::domain::entities::{AnimeDetailed, Collection};
+use crate::{log_debug, log_error, log_info};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Arc;
@@ -67,11 +68,13 @@ pub struct GetCollectionStatisticsRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct ImportAnimeBatchRequest {
     pub titles: Vec<String>,
+    pub collection_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct ImportFromCsvRequest {
     pub csv_content: String,
+    pub collection_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -155,9 +158,10 @@ pub async fn add_anime_to_collection(
     request: AddAnimeToCollectionRequest,
     collection_service: State<'_, Arc<CollectionService>>,
 ) -> Result<(), String> {
-    println!(
-        "DEBUG: add_anime_to_collection command called - collection: {}, anime: {}",
-        request.collection_id, request.anime_id
+    log_debug!(
+        "add_anime_to_collection command called - collection: {}, anime: {}",
+        request.collection_id,
+        request.anime_id
     );
 
     let result = collection_service
@@ -172,13 +176,14 @@ pub async fn add_anime_to_collection(
 
     match &result {
         Ok(_) => {
-            println!(
-                "DEBUG: Successfully added anime {} to collection {}",
-                request.anime_id, request.collection_id
+            log_info!(
+                "Successfully added anime {} to collection {}",
+                request.anime_id,
+                request.collection_id
             );
         }
         Err(e) => {
-            println!("DEBUG: Failed to add anime to collection: {}", e);
+            log_error!("Failed to add anime to collection: {}", e);
         }
     }
 
@@ -234,7 +239,7 @@ pub async fn import_anime_batch(
     app_handle: tauri::AppHandle,
 ) -> Result<ImportResult, String> {
     import_service
-        .import_anime_batch_with_progress(request.titles, Some(app_handle))
+        .import_anime_batch(request.titles, Some(app_handle), None)
         .await
         .map_err(|e| e.to_string())
 }
@@ -268,7 +273,7 @@ pub async fn import_from_csv(
     }
 
     import_service
-        .import_anime_batch_with_progress(titles, Some(app_handle))
+        .import_anime_batch(titles, Some(app_handle), None)
         .await
         .map_err(|e| e.to_string())
 }
@@ -279,9 +284,10 @@ pub async fn import_from_csv(
 pub async fn validate_anime_titles(
     request: ValidateAnimeTitlesRequest,
     import_service: State<'_, Arc<ImportService>>,
+    app_handle: tauri::AppHandle,
 ) -> Result<ValidationResult, String> {
     import_service
-        .validate_anime_titles(request.titles)
+        .validate_anime_titles(request.titles, Some(&app_handle))
         .await
         .map_err(|e| e.to_string())
 }
@@ -291,27 +297,28 @@ pub async fn validate_anime_titles(
 pub async fn import_validated_anime(
     request: ImportValidatedAnimeRequest,
     import_service: State<'_, Arc<ImportService>>,
+    app_handle: tauri::AppHandle,
 ) -> Result<ImportResult, String> {
-    println!(
-        "DEBUG: import_validated_anime command called with {} anime",
+    log_debug!(
+        "import_validated_anime command called with {} anime",
         request.validated_anime.len()
     );
     let result = import_service
-        .import_validated_anime(request.validated_anime)
+        .import_validated_anime(request.validated_anime, Some(app_handle))
         .await
         .map_err(|e| e.to_string());
 
     match &result {
         Ok(import_result) => {
-            println!(
-                "DEBUG: Import completed - imported: {}, failed: {}, skipped: {}",
+            log_info!(
+                "Import completed - imported: {}, failed: {}, skipped: {}",
                 import_result.imported.len(),
                 import_result.failed.len(),
                 import_result.skipped.len()
             );
         }
         Err(e) => {
-            println!("DEBUG: Import failed with error: {}", e);
+            log_error!("Import failed with error: {}", e);
         }
     }
 

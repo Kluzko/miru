@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
-import type { Anime } from "@/types";
+import type { AnimeDetailed } from "@/types";
 
 export type SortBy = "rating" | "year" | "title" | "episodes";
 export type SortOrder = "asc" | "desc";
@@ -11,7 +11,7 @@ export type GroupBy =
   | "genre"
   | "status";
 
-export function useAnimeFilters(animes: Anime[]) {
+export function useAnimeFilters(animes: AnimeDetailed[]) {
   const [genreFilters, setGenreFilters] = useState<string[]>([]);
   const [yearRange, setYearRange] = useState<[number, number]>([
     1950,
