@@ -1,6 +1,5 @@
 use crate::domain::{
     entities::{anime_detailed::*, Genre},
-    services::{ProviderAnimeData, UnifiedDataResolver},
     value_objects::{
         AnimeProvider, AnimeStatus, AnimeTier, AnimeTitle, AnimeType, ProviderMetadata,
         QualityMetrics, UnifiedAgeRestriction,
@@ -17,13 +16,6 @@ pub struct AniListMapper;
 
 impl AniListMapper {
     pub fn to_domain(anilist_media: AniListMedia) -> AnimeDetailed {
-        Self::to_domain_with_resolver(anilist_media, &UnifiedDataResolver::new())
-    }
-
-    pub fn to_domain_with_resolver(
-        anilist_media: AniListMedia,
-        resolver: &UnifiedDataResolver,
-    ) -> AnimeDetailed {
         let id = Uuid::new_v4();
 
         // Map title
@@ -95,7 +87,10 @@ impl AniListMapper {
             status: Self::map_status(anilist_media.status.as_deref()),
             aired,
             anime_type: Self::map_anime_type(anilist_media.format.as_deref()),
-            age_restriction: Self::resolve_age_restriction(&anilist_media, resolver),
+            age_restriction: Some(Self::map_age_restriction(
+                anilist_media.is_adult,
+                &anilist_media.tags,
+            )),
             genres,
             studios,
             source: anilist_media.source,
@@ -120,32 +115,9 @@ impl AniListMapper {
         }
     }
 
-    /// Create provider data for cross-provider resolution
-    pub fn to_provider_data(anilist_media: &AniListMedia) -> ProviderAnimeData {
-        ProviderAnimeData {
-            provider: AnimeProvider::AniList,
-            score: Self::normalize_score(anilist_media.average_score),
-            favorites: anilist_media.favourites.map(|f| f as u32),
-            age_restriction: Some(Self::map_age_restriction(
-                anilist_media.is_adult,
-                &anilist_media.tags,
-            )),
-            last_synced: Some(Utc::now()),
-        }
-    }
-
     /// Normalize AniList score (0-100) to unified 0-10 scale
     fn normalize_score(score: Option<i32>) -> Option<f32> {
         score.map(|s| (s as f32 / 10.0).clamp(0.0, 10.0))
-    }
-
-    /// Resolve age restriction using cross-provider logic
-    fn resolve_age_restriction(
-        anilist_media: &AniListMedia,
-        resolver: &UnifiedDataResolver,
-    ) -> Option<UnifiedAgeRestriction> {
-        let provider_data = vec![Self::to_provider_data(anilist_media)];
-        resolver.resolve_age_restriction(&provider_data)
     }
 
     fn map_title(

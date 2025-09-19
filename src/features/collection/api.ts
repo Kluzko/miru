@@ -7,7 +7,6 @@ import {
   GetCollectionAnimeRequest,
   GetCollectionRequest,
   ImportAnimeBatchRequest,
-  ImportFromCsvRequest,
   UpdateCollectionRequest,
 } from "@/types";
 
@@ -39,7 +38,4 @@ export const collectionApi = {
   // Import
   importBatch: (request: ImportAnimeBatchRequest) =>
     invoke("importAnimeBatch", request),
-
-  importCsv: (request: ImportFromCsvRequest) =>
-    invoke("importFromCsv", request),
 };

@@ -6,10 +6,17 @@ mod shared;
 // Log macros are exported by the logger module
 
 use application::{
-    commands::*,
+    commands::{anime_commands::*, collection_commands::*, provider_commands::*},
     services::{AnimeService, CollectionService, ImportService, ProviderManager},
 };
-use infrastructure::database::{repositories::*, Database};
+use infrastructure::database::{
+    repositories::{AnimeRepositoryImpl, CollectionRepositoryImpl},
+    Database,
+};
+use shared::validation::{
+    validation_chain::ValidationChain,
+    validation_rules::{ExternalIdValidationRule, ScoreValidationRule, TitleValidationRule},
+};
 // use shared::utils::logger::{LogContext, TimedOperation};
 use std::sync::Arc;
 use tauri::Manager;
@@ -45,7 +52,6 @@ pub fn run() {
         update_anime_in_collection,
         // Import commands
         import_anime_batch,
-        import_from_csv,
         validate_anime_titles,
         import_validated_anime,
         // Provider commands
@@ -59,9 +65,10 @@ pub fn run() {
 
     // 2) Export bindings in debug builds
     #[cfg(debug_assertions)]
-    specta_builder
-        .export(Typescript::default(), "../src/types/bindings.ts")
-        .expect("tauri-specta: failed to export TypeScript bindings");
+    if let Err(e) = specta_builder.export(Typescript::default(), "../src/types/bindings.ts") {
+        eprintln!("Warning: Failed to export TypeScript bindings: {}", e);
+        eprintln!("TypeScript types may be out of sync. Consider running cargo build again.");
+    }
 
     // 3) Create the invoke handler BEFORE moving `specta_builder` into the setup closure
     let invoke_handler = specta_builder.invoke_handler();
@@ -75,22 +82,36 @@ pub fn run() {
             // `specta_builder` is moved into this closure (no later uses outside).
             specta_builder.mount_events(app);
 
-            // Initialize database
-            let database =
-                Arc::new(Database::new().expect("Failed to initialize database connection"));
+            // Initialize database with proper error handling
+            let database = match Database::new() {
+                Ok(db) => Arc::new(db),
+                Err(e) => {
+                    eprintln!("Failed to initialize database connection: {}", e);
+                    eprintln!("Please check your DATABASE_URL environment variable and database connection.");
+                    std::process::exit(1);
+                }
+            };
 
-            // Run migrations
+            // Run migrations with proper error handling
             {
                 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
                 const MIGRATIONS: EmbeddedMigrations =
                     embed_migrations!("src/infrastructure/database/migrations");
 
-                let mut conn = database
-                    .get_connection()
-                    .expect("Failed to get database connection for migrations");
+                let mut conn = match database.get_connection() {
+                    Ok(conn) => conn,
+                    Err(e) => {
+                        eprintln!("Failed to get database connection for migrations: {}", e);
+                        eprintln!("Database may be unreachable or configuration is incorrect.");
+                        std::process::exit(1);
+                    }
+                };
 
-                conn.run_pending_migrations(MIGRATIONS)
-                    .expect("Failed to run database migrations");
+                if let Err(e) = conn.run_pending_migrations(MIGRATIONS) {
+                    eprintln!("Failed to run database migrations: {}", e);
+                    eprintln!("Database migration failed. Please check database schema and permissions.");
+                    std::process::exit(1);
+                }
             }
 
             // Initialize provider manager
@@ -113,6 +134,12 @@ pub fn run() {
                 Arc::clone(&anime_repo),
             ));
 
+            // Create validation chain with rules
+            let _validation_chain = ValidationChain::new()
+                .add_rule(Arc::new(TitleValidationRule))
+                .add_rule(Arc::new(ScoreValidationRule))
+                .add_rule(Arc::new(ExternalIdValidationRule));
+
             let import_service = Arc::new(ImportService::new(
                 Arc::clone(&anime_repo),
                 Arc::clone(&provider_manager),
@@ -127,5 +154,9 @@ pub fn run() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .unwrap_or_else(|e| {
+            eprintln!("Failed to run Tauri application: {}", e);
+            eprintln!("Application startup failed. Please check system requirements and permissions.");
+            std::process::exit(1);
+        });
 }

@@ -10,7 +10,6 @@ import {
   DeleteCollectionRequest,
   UpdateCollectionRequest,
   ImportAnimeBatchRequest,
-  ImportFromCsvRequest,
 } from "@/types";
 
 export const collectionKeys = {
@@ -263,34 +262,6 @@ export function useImportAnimeBatch() {
       });
 
       // Update collections list to reflect new counts
-      queryClient.invalidateQueries({
-        queryKey: collectionKeys.all,
-      });
-    },
-  });
-}
-
-export function useImportFromCsv() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (data: ImportFromCsvRequest) => collectionApi.importCsv(data),
-    onSuccess: (_, variables) => {
-      // Similar optimizations as batch import
-      if (variables.collection_id) {
-        queryClient.invalidateQueries({
-          queryKey: collectionKeys.detail(variables.collection_id),
-        });
-        queryClient.invalidateQueries({
-          queryKey: collectionKeys.anime(variables.collection_id),
-        });
-      }
-
-      queryClient.invalidateQueries({
-        queryKey: ["anime", "search"],
-        refetchType: "none",
-      });
-
       queryClient.invalidateQueries({
         queryKey: collectionKeys.all,
       });

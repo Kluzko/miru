@@ -1,7 +1,5 @@
 use crate::application::services::collection_service::CollectionService;
-use crate::application::services::import_service::{
-    ImportResult, ImportService, ValidatedAnime, ValidationResult,
-};
+use crate::application::services::{ImportResult, ImportService, ValidatedAnime, ValidationResult};
 use crate::domain::entities::{AnimeDetailed, Collection};
 use crate::{log_debug, log_error, log_info};
 use serde::{Deserialize, Serialize};
@@ -68,12 +66,6 @@ pub struct GetCollectionStatisticsRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct ImportAnimeBatchRequest {
     pub titles: Vec<String>,
-    pub collection_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-pub struct ImportFromCsvRequest {
-    pub csv_content: String,
     pub collection_id: Option<String>,
 }
 
@@ -240,40 +232,6 @@ pub async fn import_anime_batch(
 ) -> Result<ImportResult, String> {
     import_service
         .import_anime_batch(request.titles, Some(app_handle), None)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn import_from_csv(
-    request: ImportFromCsvRequest,
-    import_service: State<'_, Arc<ImportService>>,
-    app_handle: tauri::AppHandle,
-) -> Result<ImportResult, String> {
-    // Parse CSV first to get titles
-    let mut reader = csv::Reader::from_reader(request.csv_content.as_bytes());
-    let mut titles = Vec::new();
-
-    for result in reader.records() {
-        match result {
-            Ok(record) => {
-                if let Some(first_field) = record.get(0) {
-                    if !first_field.trim().is_empty() {
-                        titles.push(first_field.trim().to_string());
-                    }
-                }
-            }
-            Err(_) => continue,
-        }
-    }
-
-    if titles.is_empty() {
-        return Err("No valid data found in CSV".to_string());
-    }
-
-    import_service
-        .import_anime_batch(titles, Some(app_handle), None)
         .await
         .map_err(|e| e.to_string())
 }

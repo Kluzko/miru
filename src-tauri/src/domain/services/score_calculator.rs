@@ -19,14 +19,10 @@ struct ScoreWeights {
 
 #[derive(Debug, Clone)]
 struct NormalizationContext {
-    total_titles: f32,
     max_members: f32,
     global_rating_mean: f32,
     vote_prior: f32,
-    confidence_z: f32,
-    max_members_per_day: f32,
     max_favorites_per_day: f32,
-    max_votes_per_day: f32,
     recency_half_life_days: f32,
     vote_reliability_threshold: f32,
 }
@@ -43,14 +39,10 @@ impl Default for ScoreCalculator {
             },
             max_momentum_weight: 0.2,
             context: NormalizationContext {
-                total_titles: 20000.0,
                 max_members: 5_000_000.0,
                 global_rating_mean: 7.1,
                 vote_prior: 10_000.0,
-                confidence_z: 1.96,
-                max_members_per_day: 50_000.0,
                 max_favorites_per_day: 5_000.0,
-                max_votes_per_day: 10_000.0,
                 recency_half_life_days: 90.0,
                 vote_reliability_threshold: 25_000.0,
             },
@@ -244,18 +236,6 @@ impl ScoreCalculator {
         } else {
             0.0
         }
-    }
-
-    fn wilson_lower_bound(&self, successes: f32, n: f32, z: f32) -> f32 {
-        if n <= 0.0 {
-            return 0.0;
-        }
-        let p = self.clamp(successes / n, 0.0, 1.0);
-        let z2 = z * z;
-        let denom = 1.0 + z2 / n;
-        let center = p + z2 / (2.0 * n);
-        let margin = z * ((p * (1.0 - p) + z2 / (4.0 * n)) / n).sqrt();
-        self.clamp((center - margin) / denom, 0.0, 1.0)
     }
 
     fn half_life_decay(&self, days: f32, half_life: f32) -> f32 {

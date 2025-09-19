@@ -15,15 +15,16 @@ pub struct Database {
 
 impl Database {
     pub fn new() -> Result<Self, AppError> {
-        let database_url = env::var("DATABASE_URL")?;
+        let database_url = Self::get_validated_database_url()?;
 
-        // Enhanced connection pool configuration
+        // Enhanced connection pool configuration with dynamic sizing
         let manager = ConnectionManager::<PgConnection>::new(database_url);
 
+        let pool_config = Self::get_optimal_pool_config();
         let pool = r2d2::Pool::builder()
-            // Pool sizing - optimized for desktop app with moderate concurrent usage
-            .max_size(20) // Maximum connections in pool
-            .min_idle(Some(3)) // Minimum idle connections to maintain
+            // Dynamic pool sizing based on system resources
+            .max_size(pool_config.max_size)
+            .min_idle(Some(pool_config.min_idle))
             // Connection timeouts
             .connection_timeout(Duration::from_secs(10)) // Time to wait for connection from pool
             .idle_timeout(Some(Duration::from_secs(300))) // Close idle connections after 5 minutes
@@ -39,10 +40,56 @@ impl Database {
         log_info!(
             "Database connection pool initialized with max_size: {}, min_idle: {:?}",
             pool.max_size(),
-            3
+            pool_config.min_idle
         );
 
         Ok(Self { pool })
+    }
+
+    /// Validate and retrieve database URL with security measures
+    fn get_validated_database_url() -> Result<String, AppError> {
+        let database_url = env::var("DATABASE_URL").map_err(|_| {
+            AppError::DatabaseError("DATABASE_URL environment variable not found".to_string())
+        })?;
+
+        // Validate URL format and basic security checks
+        if !database_url.starts_with("postgres://") && !database_url.starts_with("postgresql://") {
+            return Err(AppError::DatabaseError(
+                "Invalid database URL format. Must start with postgres:// or postgresql://"
+                    .to_string(),
+            ));
+        }
+
+        // Ensure URL doesn't contain obvious security issues
+        if database_url.contains("password=") || database_url.len() < 20 {
+            return Err(AppError::DatabaseError(
+                "Database URL appears to be malformed or insecure".to_string(),
+            ));
+        }
+
+        // Log connection attempt without exposing credentials
+        log_info!(
+            "Initializing database connection to: {}",
+            database_url.split('@').last().unwrap_or("unknown_host")
+        );
+
+        Ok(database_url)
+    }
+
+    /// Calculate optimal pool configuration based on system resources
+    fn get_optimal_pool_config() -> PoolConfig {
+        let cpu_count = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+
+        // Base pool size on CPU count but cap for desktop app
+        let max_size = std::cmp::min(cpu_count * 2, 20);
+        let min_idle = std::cmp::max(2, max_size / 4);
+
+        PoolConfig {
+            max_size: max_size as u32,
+            min_idle: min_idle as u32,
+        }
     }
 
     pub fn get_connection(&self) -> Result<DbConnection, AppError> {
@@ -82,4 +129,10 @@ pub struct PoolStatus {
     pub connections: u32,
     pub idle_connections: u32,
     pub max_size: u32,
+}
+
+#[derive(Debug)]
+struct PoolConfig {
+    max_size: u32,
+    min_idle: u32,
 }

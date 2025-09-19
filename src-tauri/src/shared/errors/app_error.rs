@@ -36,6 +36,12 @@ pub enum AppError {
 
     #[error("Not implemented: {0}")]
     NotImplemented(String),
+
+    #[error("Invalid operation: {0}")]
+    InvalidOperation(String),
+
+    #[error("Duplicate entry: {0}")]
+    Duplicate(String),
 }
 
 impl From<diesel::result::Error> for AppError {
@@ -43,6 +49,17 @@ impl From<diesel::result::Error> for AppError {
         match err {
             diesel::result::Error::NotFound => {
                 AppError::NotFound("Record not found in database".to_string())
+            }
+            diesel::result::Error::DatabaseError(db_kind, ref info) => {
+                let error_msg = err.to_string();
+                if error_msg.contains("UNIQUE constraint failed")
+                    || error_msg.contains("duplicate key")
+                    || matches!(db_kind, diesel::result::DatabaseErrorKind::UniqueViolation)
+                {
+                    AppError::Duplicate(format!("Duplicate entry: {}", info.message()))
+                } else {
+                    AppError::DatabaseError(err.to_string())
+                }
             }
             _ => AppError::DatabaseError(err.to_string()),
         }

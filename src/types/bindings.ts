@@ -117,14 +117,6 @@ async importAnimeBatch(request: ImportAnimeBatchRequest) : Promise<Result<Import
     else return { status: "error", error: e  as any };
 }
 },
-async importFromCsv(request: ImportFromCsvRequest) : Promise<Result<ImportResult, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("import_from_csv", { request }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async validateAnimeTitles(request: ValidateAnimeTitlesRequest) : Promise<Result<ValidationResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("validate_anime_titles", { request }) };
@@ -316,7 +308,6 @@ export type GetSeasonalAnimeRequest = { year: number; season: string; page: numb
 export type GetTopAnimeRequest = { page: number; limit: number }
 export type ImportAnimeBatchRequest = { titles: string[]; collection_id: string | null }
 export type ImportError = { title: string; reason: string }
-export type ImportFromCsvRequest = { csv_content: string; collection_id: string | null }
 export type ImportResult = { imported: ImportedAnime[]; failed: ImportError[]; skipped: SkippedAnime[]; total: number }
 export type ImportValidatedAnimeRequest = { validated_anime: ValidatedAnime[] }
 export type ImportedAnime = { title: string; primary_external_id: string; provider: AnimeProvider; id: string }

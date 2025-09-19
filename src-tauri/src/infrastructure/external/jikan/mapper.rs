@@ -1,6 +1,6 @@
 use crate::domain::{
     entities::{AiredDates, AnimeDetailed, Genre},
-    services::{ProviderAnimeData, ScoreCalculator, UnifiedDataResolver},
+    services::ScoreCalculator,
     value_objects::{
         AnimeProvider, AnimeStatus, AnimeTier, AnimeTitle, AnimeType, ProviderMetadata,
         QualityMetrics, UnifiedAgeRestriction,
@@ -16,13 +16,6 @@ pub struct JikanMapper;
 
 impl JikanMapper {
     pub fn to_domain(dto: JikanAnimeData) -> AnimeDetailed {
-        Self::to_domain_with_resolver(dto, &UnifiedDataResolver::new())
-    }
-
-    pub fn to_domain_with_resolver(
-        dto: JikanAnimeData,
-        resolver: &UnifiedDataResolver,
-    ) -> AnimeDetailed {
         // Generate a deterministic UUID based on mal_id if available
         // This ensures the same anime always gets the same UUID in our system
         let id = if dto.mal_id > 0 {
@@ -58,7 +51,7 @@ impl JikanMapper {
             status: Self::map_status(dto.status.as_deref()),
             aired: Self::map_aired_dates(&dto.aired),
             anime_type: Self::map_type(dto.anime_type.as_deref()),
-            age_restriction: Self::resolve_age_restriction(&dto, resolver),
+            age_restriction: Self::map_rating(&dto.rating),
             genres: Self::map_genres(&dto.genres),
             studios: Self::map_studios(&dto.studios),
             source: dto.source.clone(),
@@ -83,29 +76,9 @@ impl JikanMapper {
         anime
     }
 
-    /// Create provider data for cross-provider resolution
-    pub fn to_provider_data(dto: &JikanAnimeData) -> ProviderAnimeData {
-        ProviderAnimeData {
-            provider: AnimeProvider::Jikan,
-            score: Self::normalize_score(dto.score),
-            favorites: dto.favorites.map(|v| v as u32),
-            age_restriction: Self::map_rating(&dto.rating),
-            last_synced: Some(Utc::now()),
-        }
-    }
-
     /// Normalize score to ensure 0-10 scale
     fn normalize_score(score: Option<f32>) -> Option<f32> {
         score.map(|s| s.clamp(0.0, 10.0))
-    }
-
-    /// Resolve age restriction using cross-provider logic
-    fn resolve_age_restriction(
-        dto: &JikanAnimeData,
-        resolver: &UnifiedDataResolver,
-    ) -> Option<UnifiedAgeRestriction> {
-        let provider_data = vec![Self::to_provider_data(dto)];
-        resolver.resolve_age_restriction(&provider_data)
     }
 
     fn map_status(status: Option<&str>) -> AnimeStatus {

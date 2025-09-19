@@ -1,6 +1,19 @@
 use regex::Regex;
+use std::sync::OnceLock;
 
 use crate::shared::errors::AppError;
+
+/// Regex pattern for validating collection names
+/// Allows alphanumeric characters, spaces, hyphens, and underscores
+const COLLECTION_NAME_PATTERN: &str = r"^[a-zA-Z0-9\s\-_]+$";
+
+/// Get compiled regex for collection name validation
+fn get_collection_name_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        Regex::new(COLLECTION_NAME_PATTERN).expect("Collection name regex pattern is invalid")
+    })
+}
 
 pub struct Validator;
 
@@ -41,8 +54,7 @@ impl Validator {
         }
 
         // Check for valid characters (alphanumeric, spaces, and some special characters)
-        let re = Regex::new(r"^[a-zA-Z0-9\s\-_]+$").unwrap();
-        if !re.is_match(name) {
+        if !get_collection_name_regex().is_match(name) {
             return Err(AppError::ValidationError(
                 "Collection name contains invalid characters".to_string(),
             ));
@@ -71,18 +83,24 @@ impl Validator {
         match provider {
             crate::domain::value_objects::AnimeProvider::Jikan => {
                 // MAL IDs should be positive integers
-                if external_id.parse::<i32>().unwrap_or(-1) <= 0 {
-                    return Err(AppError::ValidationError(
-                        "Jikan (MAL) ID must be a positive integer".to_string(),
-                    ));
+                match external_id.parse::<i32>() {
+                    Ok(id) if id > 0 => {} // Valid positive integer
+                    _ => {
+                        return Err(AppError::ValidationError(
+                            "Jikan (MAL) ID must be a positive integer".to_string(),
+                        ))
+                    }
                 }
             }
             crate::domain::value_objects::AnimeProvider::AniList => {
                 // AniList IDs should be positive integers
-                if external_id.parse::<i32>().unwrap_or(-1) <= 0 {
-                    return Err(AppError::ValidationError(
-                        "AniList ID must be a positive integer".to_string(),
-                    ));
+                match external_id.parse::<i32>() {
+                    Ok(id) if id > 0 => {} // Valid positive integer
+                    _ => {
+                        return Err(AppError::ValidationError(
+                            "AniList ID must be a positive integer".to_string(),
+                        ))
+                    }
                 }
             }
             _ => {

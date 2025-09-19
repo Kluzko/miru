@@ -1,5 +1,3 @@
-//! Season enum and related functionality
-
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
