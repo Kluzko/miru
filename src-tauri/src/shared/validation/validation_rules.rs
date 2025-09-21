@@ -1,6 +1,6 @@
 use super::validation_chain::{ValidationContext, ValidationResult, ValidationRule};
-use crate::domain::repositories::AnimeRepository;
-use crate::domain::value_objects::AnimeProvider;
+use crate::modules::anime::AnimeRepository;
+use crate::modules::provider::AnimeProvider;
 use crate::shared::errors::AppResult;
 use async_trait::async_trait;
 use chrono::Datelike;

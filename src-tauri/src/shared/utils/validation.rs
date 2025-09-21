@@ -65,7 +65,7 @@ impl Validator {
     /// Validate external ID for any provider
     pub fn validate_external_id(
         external_id: &str,
-        provider: &crate::domain::value_objects::AnimeProvider,
+        provider: &crate::modules::provider::AnimeProvider,
     ) -> Result<(), AppError> {
         if external_id.is_empty() {
             return Err(AppError::ValidationError(
@@ -81,7 +81,7 @@ impl Validator {
 
         // Provider-specific validation
         match provider {
-            crate::domain::value_objects::AnimeProvider::Jikan => {
+            crate::modules::provider::AnimeProvider::Jikan => {
                 // MAL IDs should be positive integers
                 match external_id.parse::<i32>() {
                     Ok(id) if id > 0 => {} // Valid positive integer
@@ -92,7 +92,7 @@ impl Validator {
                     }
                 }
             }
-            crate::domain::value_objects::AnimeProvider::AniList => {
+            crate::modules::provider::AnimeProvider::AniList => {
                 // AniList IDs should be positive integers
                 match external_id.parse::<i32>() {
                     Ok(id) if id > 0 => {} // Valid positive integer

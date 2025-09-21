@@ -1,4 +1,4 @@
-use crate::domain::traits::anime_provider_client::RateLimiterInfo;
+use crate::modules::provider::traits::RateLimiterInfo;
 use crate::shared::errors::AppError;
 use std::sync::Arc;
 use std::time::{Duration, Instant};

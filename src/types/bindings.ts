@@ -133,10 +133,7 @@ async importValidatedAnime(request: ImportValidatedAnimeRequest) : Promise<Resul
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Get list of all providers with their status
- */
-async listProviders() : Promise<Result<ProvidersListResponse, string>> {
+async listProviders() : Promise<Result<ProviderInfo[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_providers") };
 } catch (e) {
@@ -144,21 +141,15 @@ async listProviders() : Promise<Result<ProvidersListResponse, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Set the primary provider
- */
-async setPrimaryProvider(request: SetPrimaryProviderRequest) : Promise<Result<null, string>> {
+async setPrimaryProvider(providerName: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("set_primary_provider", { request }) };
+    return { status: "ok", data: await TAURI_INVOKE("set_primary_provider", { providerName }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Get the current primary provider
- */
-async getPrimaryProvider() : Promise<Result<AnimeProvider, string>> {
+async getPrimaryProvider() : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_primary_provider") };
 } catch (e) {
@@ -166,10 +157,7 @@ async getPrimaryProvider() : Promise<Result<AnimeProvider, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Get enabled providers
- */
-async getEnabledProviders() : Promise<Result<AnimeProvider[], string>> {
+async getEnabledProviders() : Promise<Result<string[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_enabled_providers") };
 } catch (e) {
@@ -177,20 +165,14 @@ async getEnabledProviders() : Promise<Result<AnimeProvider[], string>> {
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Get rate limit info for a specific provider
- */
-async getProviderRateLimit(request: GetProviderRateLimitRequest) : Promise<Result<RateLimiterInfo | null, string>> {
+async getProviderRateLimit(providerName: string) : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_provider_rate_limit", { request }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_provider_rate_limit", { providerName }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Get all age restrictions with display names for frontend
- */
 async getAgeRestrictions() : Promise<Result<AgeRestrictionInfo[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_age_restrictions") };
@@ -212,26 +194,7 @@ async getAgeRestrictions() : Promise<Result<AgeRestrictionInfo[], string>> {
 /** user-defined types **/
 
 export type AddAnimeToCollectionRequest = { collection_id: string; anime_id: string; user_score: number | null; notes: string | null }
-/**
- * Age restriction information for frontend display
- */
-export type AgeRestrictionInfo = { 
-/**
- * The enum variant name
- */
-variant: string; 
-/**
- * User-friendly display name
- */
-display_name: string; 
-/**
- * Description for UI
- */
-description: string; 
-/**
- * Minimum age
- */
-min_age: number }
+export type AgeRestrictionInfo = { provider: string; max_age: number | null; content_rating: string }
 /**
  * Air date range for anime
  */
@@ -303,14 +266,14 @@ export type Genre = { id: string; name: string }
 export type GetAnimeByIdRequest = { id: string }
 export type GetCollectionAnimeRequest = { collection_id: string }
 export type GetCollectionRequest = { id: string }
-export type GetProviderRateLimitRequest = { provider: AnimeProvider }
 export type GetSeasonalAnimeRequest = { year: number; season: string; page: number }
 export type GetTopAnimeRequest = { page: number; limit: number }
-export type ImportAnimeBatchRequest = { titles: string[]; collection_id: string | null }
+export type ImportAnimeBatchRequest = { titles: string[] }
 export type ImportError = { title: string; reason: string }
 export type ImportResult = { imported: ImportedAnime[]; failed: ImportError[]; skipped: SkippedAnime[]; total: number }
 export type ImportValidatedAnimeRequest = { validated_anime: ValidatedAnime[] }
 export type ImportedAnime = { title: string; primary_external_id: string; provider: AnimeProvider; id: string }
+export type ProviderInfo = { name: string; enabled: boolean; is_primary: boolean; rate_limit_per_minute: number }
 /**
  * Provider-specific metadata for external IDs and synchronization
  */
@@ -331,28 +294,9 @@ user_preferred_provider: AnimeProvider | null;
  * Current primary provider (can be different from user preference if not available)
  */
 primary_provider: AnimeProvider }
-export type ProviderStatus = { provider: AnimeProvider; is_primary: boolean; enabled: boolean; rate_limit_info: RateLimiterInfo | null }
-export type ProvidersListResponse = { providers: ProviderStatus[]; primary_provider: AnimeProvider }
 export type QualityMetrics = { popularityScore: number; engagementScore: number; consistencyScore: number; audienceReachScore: number }
-/**
- * Rate limiter information from the actual client implementation
- */
-export type RateLimiterInfo = { 
-/**
- * Requests per second
- */
-requests_per_second: number; 
-/**
- * Requests per minute (derived)
- */
-requests_per_minute: number; 
-/**
- * Minimum delay between requests (in milliseconds)
- */
-min_delay_ms: number }
 export type RemoveAnimeFromCollectionRequest = { collection_id: string; anime_id: string }
 export type SearchAnimeRequest = { query: string }
-export type SetPrimaryProviderRequest = { provider: AnimeProvider }
 export type SkippedAnime = { title: string; external_id: string; provider: AnimeProvider; reason: string }
 export type UpdateAnimeInCollectionRequest = { collection_id: string; anime_id: string; user_score: number | null; notes: string | null }
 export type UpdateCollectionRequest = { id: string; name: string | null; description: string | null }

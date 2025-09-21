@@ -1,5 +1,5 @@
-use crate::domain::entities::AnimeDetailed;
-use crate::domain::value_objects::AnimeProvider;
+use crate::modules::anime::AnimeDetailed;
+use crate::modules::provider::AnimeProvider;
 use crate::shared::errors::AppResult;
 use async_trait::async_trait;
 use std::sync::Arc;

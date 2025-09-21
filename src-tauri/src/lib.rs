@@ -1,18 +1,18 @@
-mod application;
-mod domain;
-mod infrastructure;
+mod modules;
+mod schema;
 mod shared;
 
 // Log macros are exported by the logger module
 
-use application::{
-    commands::{anime_commands::*, collection_commands::*, provider_commands::*},
-    services::{AnimeService, CollectionService, ImportService, ProviderManager},
+use modules::{
+    anime::{commands::*, infrastructure::persistence::AnimeRepositoryImpl, AnimeService},
+    collection::{
+        commands::*, infrastructure::persistence::CollectionRepositoryImpl, CollectionService,
+    },
+    data_import::{commands::*, ImportService},
+    provider::{commands::*, ProviderManager},
 };
-use infrastructure::database::{
-    repositories::{AnimeRepositoryImpl, CollectionRepositoryImpl},
-    Database,
-};
+use shared::database::Database;
 use shared::validation::{
     validation_chain::ValidationChain,
     validation_rules::{ExternalIdValidationRule, ScoreValidationRule, TitleValidationRule},
@@ -96,7 +96,7 @@ pub fn run() {
             {
                 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
                 const MIGRATIONS: EmbeddedMigrations =
-                    embed_migrations!("src/infrastructure/database/migrations");
+                    embed_migrations!("migrations");
 
                 let mut conn = match database.get_connection() {
                     Ok(conn) => conn,
@@ -118,9 +118,9 @@ pub fn run() {
             let provider_manager = Arc::new(tokio::sync::Mutex::new(ProviderManager::new()));
 
             // Initialize repositories
-            let anime_repo: Arc<dyn domain::repositories::AnimeRepository> =
+            let anime_repo: Arc<dyn modules::anime::AnimeRepository> =
                 Arc::new(AnimeRepositoryImpl::new(Arc::clone(&database)));
-            let collection_repo: Arc<dyn domain::repositories::CollectionRepository> =
+            let collection_repo: Arc<dyn modules::collection::CollectionRepository> =
                 Arc::new(CollectionRepositoryImpl::new(Arc::clone(&database)));
 
             // Initialize services
