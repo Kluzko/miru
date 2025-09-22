@@ -23,6 +23,7 @@ impl Season {
     }
 
     /// Get season display name
+    #[allow(dead_code)]
     pub fn display_name(&self) -> &'static str {
         match self {
             Self::Winter => "Winter",

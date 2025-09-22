@@ -31,6 +31,7 @@ impl UnifiedAgeRestriction {
     }
 
     /// Display name for UI
+    #[allow(dead_code)]
     pub fn display_name(&self) -> &'static str {
         match self {
             Self::GeneralAudiences => "All Ages",

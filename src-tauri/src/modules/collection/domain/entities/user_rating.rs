@@ -61,6 +61,7 @@ impl OverallFeeling {
     }
 
     /// Get display name
+    #[allow(dead_code)]
     pub fn display_name(&self) -> &'static str {
         match self {
             Self::Loved => "Loved it",
@@ -109,6 +110,7 @@ pub enum RecommendationPreference {
 }
 
 impl RecommendationPreference {
+    #[allow(dead_code)]
     pub fn display_name(&self) -> &'static str {
         match self {
             Self::Recommend => "Show similar",
@@ -153,6 +155,7 @@ pub enum RatingCriterionType {
 }
 
 impl RatingCriterionType {
+    #[allow(dead_code)]
     pub fn display_name(&self) -> String {
         match self {
             Self::StoryQuality => "Story Quality".to_string(),

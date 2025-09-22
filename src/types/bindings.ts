@@ -141,15 +141,15 @@ async listProviders() : Promise<Result<ProviderInfo[], string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async setPrimaryProvider(providerName: string) : Promise<Result<null, string>> {
+async setPrimaryProvider(provider: AnimeProvider) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("set_primary_provider", { providerName }) };
+    return { status: "ok", data: await TAURI_INVOKE("set_primary_provider", { provider }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async getPrimaryProvider() : Promise<Result<string, string>> {
+async getPrimaryProvider() : Promise<Result<AnimeProvider, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_primary_provider") };
 } catch (e) {
@@ -157,7 +157,7 @@ async getPrimaryProvider() : Promise<Result<string, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async getEnabledProviders() : Promise<Result<string[], string>> {
+async getEnabledProviders() : Promise<Result<AnimeProvider[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_enabled_providers") };
 } catch (e) {
@@ -165,9 +165,9 @@ async getEnabledProviders() : Promise<Result<string[], string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async getProviderRateLimit(providerName: string) : Promise<Result<number, string>> {
+async getProviderRateLimit(provider: AnimeProvider) : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_provider_rate_limit", { providerName }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_provider_rate_limit", { provider }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -194,7 +194,7 @@ async getAgeRestrictions() : Promise<Result<AgeRestrictionInfo[], string>> {
 /** user-defined types **/
 
 export type AddAnimeToCollectionRequest = { collection_id: string; anime_id: string; user_score: number | null; notes: string | null }
-export type AgeRestrictionInfo = { provider: string; max_age: number | null; content_rating: string }
+export type AgeRestrictionInfo = { provider: AnimeProvider; max_age: number | null; content_rating: string }
 /**
  * Air date range for anime
  */
@@ -273,7 +273,7 @@ export type ImportError = { title: string; reason: string }
 export type ImportResult = { imported: ImportedAnime[]; failed: ImportError[]; skipped: SkippedAnime[]; total: number }
 export type ImportValidatedAnimeRequest = { validated_anime: ValidatedAnime[] }
 export type ImportedAnime = { title: string; primary_external_id: string; provider: AnimeProvider; id: string }
-export type ProviderInfo = { name: string; enabled: boolean; is_primary: boolean; rate_limit_per_minute: number }
+export type ProviderInfo = { provider: AnimeProvider; name: string; enabled: boolean; is_primary: boolean; rate_limit_per_minute: number }
 /**
  * Provider-specific metadata for external IDs and synchronization
  */

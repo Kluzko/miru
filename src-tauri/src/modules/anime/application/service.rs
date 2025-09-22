@@ -2,7 +2,7 @@ use super::super::domain::{
     entities::anime_detailed::AnimeDetailed, repositories::anime_repository::AnimeRepository,
     services::score_calculator::ScoreCalculator,
 };
-use crate::modules::provider::ProviderManager;
+use crate::modules::provider::ProviderService;
 use crate::shared::errors::AppResult;
 use crate::shared::utils::logger::LogContext;
 use crate::{log_debug, log_info};
@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 pub struct AnimeService {
     anime_repo: Arc<dyn AnimeRepository>,
-    provider_manager: Arc<tokio::sync::Mutex<ProviderManager>>,
+    provider_service: Arc<ProviderService>,
     #[allow(dead_code)]
     score_calculator: Arc<ScoreCalculator>,
 }
@@ -19,11 +19,11 @@ pub struct AnimeService {
 impl AnimeService {
     pub fn new(
         anime_repo: Arc<dyn AnimeRepository>,
-        provider_manager: Arc<tokio::sync::Mutex<ProviderManager>>,
+        provider_service: Arc<ProviderService>,
     ) -> Self {
         Self {
             anime_repo,
-            provider_manager,
+            provider_service,
             score_calculator: Arc::new(ScoreCalculator::new()),
         }
     }
@@ -55,9 +55,8 @@ impl AnimeService {
             return Ok(db_results);
         }
 
-        // Otherwise, search via provider manager for potentially better results
-        let mut provider_manager = self.provider_manager.lock().await;
-        let provider_results = provider_manager.search_anime(query, 10).await?;
+        // Otherwise, search via provider service for potentially better results
+        let provider_results = self.provider_service.search_anime(query, 10).await?;
 
         if !provider_results.is_empty() {
             log_debug!(
@@ -98,9 +97,8 @@ impl AnimeService {
     }
 
     pub async fn get_top_anime(&self, limit: usize) -> AppResult<Vec<AnimeDetailed>> {
-        // Always fetch fresh data via provider manager for top anime
-        let mut provider_manager = self.provider_manager.lock().await;
-        let anime_list = provider_manager.get_top_anime(limit).await?;
+        // Always fetch fresh data via provider service for top anime
+        let anime_list = self.provider_service.get_top_anime(limit).await?;
 
         // Save to database (handling duplicates)
         let mut saved_anime = Vec::new();
@@ -128,9 +126,9 @@ impl AnimeService {
         season: &str,
         limit: usize,
     ) -> AppResult<Vec<AnimeDetailed>> {
-        // Fetch via provider manager
-        let mut provider_manager = self.provider_manager.lock().await;
-        let anime_list = provider_manager
+        // Fetch via provider service
+        let anime_list = self
+            .provider_service
             .get_seasonal_anime(year, season, limit)
             .await?;
 

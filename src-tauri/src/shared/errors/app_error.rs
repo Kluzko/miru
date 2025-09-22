@@ -1,7 +1,7 @@
 use serde::Serialize;
 use thiserror::Error;
 
-#[derive(Error, Debug, Serialize)]
+#[derive(Error, Debug, Clone, Serialize)]
 #[serde(tag = "type", content = "message")]
 pub enum AppError {
     #[error("Database error: {0}")]

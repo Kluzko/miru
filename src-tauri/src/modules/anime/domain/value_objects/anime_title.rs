@@ -5,6 +5,7 @@ use specta::Type;
 
 /// Title display preference
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum TitlePreference {
     English,
     Japanese,
@@ -14,7 +15,7 @@ pub enum TitlePreference {
 }
 
 /// Anime title information with multiple language variants
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Type)]
 pub struct AnimeTitle {
     /// Main title (usually from the primary provider)
     pub main: String,

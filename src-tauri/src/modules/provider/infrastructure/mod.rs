@@ -1,3 +1,3 @@
 pub mod cache;
 pub mod external;
-pub mod manager;
+pub mod service;

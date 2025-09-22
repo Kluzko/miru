@@ -16,6 +16,7 @@ pub enum AnimeStatus {
 }
 
 impl AnimeStatus {
+    #[allow(dead_code)]
     pub fn display_name(&self) -> &'static str {
         match self {
             AnimeStatus::Airing => "Currently Airing",

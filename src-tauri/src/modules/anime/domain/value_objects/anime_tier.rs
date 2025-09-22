@@ -29,6 +29,7 @@ impl AnimeTier {
         }
     }
 
+    #[allow(dead_code)]
     pub fn display_name(&self) -> &'static str {
         match self {
             AnimeTier::S => "S-Tier (GOAT)",

@@ -10,13 +10,14 @@ use modules::{
         commands::*, infrastructure::persistence::CollectionRepositoryImpl, CollectionService,
     },
     data_import::{commands::*, ImportService},
-    provider::{commands::*, ProviderManager},
+    provider::{commands::*, ProviderService},
 };
 use shared::database::Database;
-use shared::validation::{
-    validation_chain::ValidationChain,
-    validation_rules::{ExternalIdValidationRule, ScoreValidationRule, TitleValidationRule},
-};
+// Validation functionality - prepared but not yet integrated
+// use shared::validation::{
+//     validation_chain::ValidationChain,
+//     validation_rules::{ExternalIdValidationRule, ScoreValidationRule, TitleValidationRule},
+// };
 // use shared::utils::logger::{LogContext, TimedOperation};
 use std::sync::Arc;
 use tauri::Manager;
@@ -114,8 +115,8 @@ pub fn run() {
                 }
             }
 
-            // Initialize provider manager
-            let provider_manager = Arc::new(tokio::sync::Mutex::new(ProviderManager::new()));
+            // Initialize lock-free provider service
+            let provider_service = Arc::new(ProviderService::new());
 
             // Initialize repositories
             let anime_repo: Arc<dyn modules::anime::AnimeRepository> =
@@ -126,7 +127,7 @@ pub fn run() {
             // Initialize services
             let anime_service = Arc::new(AnimeService::new(
                 Arc::clone(&anime_repo),
-                Arc::clone(&provider_manager),
+                Arc::clone(&provider_service),
             ));
 
             let collection_service = Arc::new(CollectionService::new(
@@ -134,22 +135,22 @@ pub fn run() {
                 Arc::clone(&anime_repo),
             ));
 
-            // Create validation chain with rules
-            let _validation_chain = ValidationChain::new()
-                .add_rule(Arc::new(TitleValidationRule))
-                .add_rule(Arc::new(ScoreValidationRule))
-                .add_rule(Arc::new(ExternalIdValidationRule));
+            // Create validation chain with rules (prepared but not yet integrated)
+            // let _validation_chain = ValidationChain::new()
+            //     .add_rule(Arc::new(TitleValidationRule))
+            //     .add_rule(Arc::new(ScoreValidationRule))
+            //     .add_rule(Arc::new(ExternalIdValidationRule));
 
             let import_service = Arc::new(ImportService::new(
                 Arc::clone(&anime_repo),
-                Arc::clone(&provider_manager),
+                Arc::clone(&provider_service),
             ));
 
             // Manage state so commands can access services via `State<T>`
             app.manage(anime_service);
             app.manage(collection_service);
             app.manage(import_service);
-            app.manage(provider_manager);
+            app.manage(provider_service);
 
             Ok(())
         })

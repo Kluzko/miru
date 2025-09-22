@@ -81,8 +81,11 @@ impl ProviderCache {
             max_entries,
         };
 
-        // Note: Cleanup task will be started lazily when first cache operation occurs
-        // to avoid "no reactor running" error during app initialization
+        // Try to start cleanup task immediately if tokio runtime is available
+        // If not available, it will be started on first cache operation
+        if tokio::runtime::Handle::try_current().is_ok() {
+            provider_cache.ensure_cleanup_task_started();
+        }
 
         provider_cache
     }
@@ -92,19 +95,28 @@ impl ProviderCache {
         Self::new(5, 2, 1000)
     }
 
-    /// Generate cache key with provider prefix and normalized query
+    /// Generate cache key with provider prefix and normalized query (optimized for single allocation)
     fn generate_cache_key(&self, provider: &AnimeProvider, query: &str) -> String {
-        let normalized_query = self.normalize_query(query);
-        format!(
-            "{}:{}",
-            provider.to_string().to_lowercase(),
-            normalized_query
-        )
-    }
+        let provider_str = match provider {
+            AnimeProvider::Jikan => "jikan",
+            AnimeProvider::AniList => "anilist",
+            AnimeProvider::Kitsu => "kitsu",
+            AnimeProvider::TMDB => "tmdb",
+            AnimeProvider::AniDB => "anidb",
+        };
 
-    /// Normalize query for consistent caching
-    fn normalize_query(&self, query: &str) -> String {
-        query.trim().to_lowercase()
+        // Single allocation: directly format normalized query with provider prefix
+        let trimmed = query.trim();
+        let mut result = String::with_capacity(provider_str.len() + 1 + trimmed.len());
+        result.push_str(provider_str);
+        result.push(':');
+
+        // Append lowercase characters directly to avoid intermediate string
+        for ch in trimmed.chars() {
+            result.extend(ch.to_lowercase());
+        }
+
+        result
     }
 
     /// Get cached search results if available and not expired
@@ -259,6 +271,11 @@ impl ProviderCache {
 
     /// Evict oldest entries when cache is full
     async fn evict_oldest_entries(&self) {
+        let current_size = self.cache.len();
+        if current_size <= self.max_entries {
+            return; // No eviction needed
+        }
+
         let mut entries_to_remove = Vec::new();
 
         // Collect entries with their creation times
@@ -269,13 +286,20 @@ impl ProviderCache {
         // Sort by creation time (oldest first)
         entries_to_remove.sort_by_key(|(_, created_at)| *created_at);
 
-        // Remove oldest 10% of entries
-        let entries_to_evict = (self.max_entries / 10).max(1);
+        // Calculate how many entries to evict to get back to 90% of max capacity
+        let target_size = (self.max_entries * 9) / 10; // 90% of max
+        let entries_to_evict = current_size.saturating_sub(target_size).max(1);
+
         for (key, _) in entries_to_remove.into_iter().take(entries_to_evict) {
             self.cache.remove(&key);
         }
 
-        debug!("Evicted {} old cache entries", entries_to_evict);
+        debug!(
+            "Evicted {} old cache entries (was {}, now {})",
+            entries_to_evict,
+            current_size,
+            self.cache.len()
+        );
     }
 
     /// Warm up cache with common searches (can be called periodically)
