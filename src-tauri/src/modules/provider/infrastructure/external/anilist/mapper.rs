@@ -47,9 +47,9 @@ impl AniListMapper {
             .as_ref()
             .map(|studio_conn| {
                 studio_conn
-                    .nodes
+                    .edges
                     .iter()
-                    .map(|studio| studio.name.clone())
+                    .map(|edge| edge.node.name.clone())
                     .collect()
             })
             .unwrap_or_default();

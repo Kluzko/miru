@@ -73,7 +73,7 @@ impl ImportCoordinator {
         // Emit initial progress
         progress_tracker.emit_validation_progress(ValidationProgress {
             current: 0,
-            total: total_titles,
+            total: total_titles as u32,
             current_title: "Starting enhanced validation...".to_string(),
             processed: 0,
             found_count: 0,
@@ -85,21 +85,22 @@ impl ImportCoordinator {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
         // Use enhanced validation that leverages comprehensive provider data
+        let app_handle = self.progress_tracker.get_app_handle();
         let result = self
             .validation_service
-            .validate_titles_enhanced(titles.clone())
+            .validate_titles_enhanced(titles.clone(), app_handle)
             .await?;
 
         // Emit final progress with comprehensive data quality metrics
         let events_emitted = 1; // Single call for batch processing
         progress_tracker.emit_validation_progress(ValidationProgress {
-            current: total_titles,
-            total: total_titles,
+            current: total_titles as u32,
+            total: total_titles as u32,
             current_title: "Enhanced validation completed".to_string(),
-            processed: total_titles,
-            found_count: result.found.len(),
-            existing_count: result.already_exists.len(),
-            failed_count: result.not_found.len(),
+            processed: total_titles as u32,
+            found_count: result.found.len() as u32,
+            existing_count: result.already_exists.len() as u32,
+            failed_count: result.not_found.len() as u32,
         });
 
         log_info!(
@@ -137,7 +138,7 @@ impl ImportCoordinator {
         // Emit initial progress
         progress_tracker.emit_validation_progress(ValidationProgress {
             current: 0,
-            total: total_titles,
+            total: total_titles as u32,
             current_title: "Starting validation...".to_string(),
             processed: 0,
             found_count: 0,
@@ -169,17 +170,17 @@ impl ImportCoordinator {
             ) {
                 events_emitted += 1;
                 progress_tracker.emit_validation_progress(ValidationProgress {
-                    current: processed,
-                    total: total_titles,
+                    current: processed as u32,
+                    total: total_titles as u32,
                     current_title: if processed < total_titles {
                         format!("Processing... ({}/{})", processed, total_titles)
                     } else {
                         "Validation completed".to_string()
                     },
-                    processed,
-                    found_count: found.len(),
-                    existing_count: already_exists.len(),
-                    failed_count: not_found.len(),
+                    processed: processed as u32,
+                    found_count: found.len() as u32,
+                    existing_count: already_exists.len() as u32,
+                    failed_count: not_found.len() as u32,
                 });
             }
         }
@@ -188,7 +189,7 @@ impl ImportCoordinator {
             found: found.clone(),
             not_found: not_found.clone(),
             already_exists: already_exists.clone(),
-            total: u32::try_from(titles.len()).unwrap_or(u32::MAX),
+            total: titles.len() as u32,
         };
 
         log_info!(
@@ -233,7 +234,7 @@ impl ImportCoordinator {
         // Emit initial progress
         self.progress_tracker.emit_import_progress(ImportProgress {
             current: 0,
-            total: total_count,
+            total: total_count as u32,
             current_title: "Starting enhanced validated anime import...".to_string(),
             processed: 0,
             imported_count: 0,
@@ -264,17 +265,17 @@ impl ImportCoordinator {
                     let skipped_len = counts_clone.skipped.load(Ordering::Relaxed);
 
                     progress_tracker.emit_import_progress(ImportProgress {
-                        current: current_index,
-                        total: total_count,
+                        current: current_index as u32,
+                        total: total_count as u32,
                         current_title: format!(
                             "Importing: {} (Quality: {:.1}%)",
                             anime_title,
                             quality_score * 100.0
                         ),
-                        processed: current_processed,
-                        imported_count: imported_len,
-                        failed_count: failed_len,
-                        skipped_count: skipped_len,
+                        processed: current_processed as u32,
+                        imported_count: imported_len as u32,
+                        failed_count: failed_len as u32,
+                        skipped_count: skipped_len as u32,
                     });
 
                     // Create ValidatedAnime from enhanced data for import
@@ -330,13 +331,13 @@ impl ImportCoordinator {
 
         // Emit final completion progress
         self.progress_tracker.emit_import_progress(ImportProgress {
-            current: total_count,
-            total: total_count,
+            current: total_count as u32,
+            total: total_count as u32,
             current_title: "Enhanced validated import completed".to_string(),
-            processed: total,
-            imported_count: imported_results.len(),
-            failed_count: failed_results.len(),
-            skipped_count: skipped_results.len(),
+            processed: total as u32,
+            imported_count: imported_results.len() as u32,
+            failed_count: failed_results.len() as u32,
+            skipped_count: skipped_results.len() as u32,
         });
 
         log_info!(
@@ -350,7 +351,7 @@ impl ImportCoordinator {
             imported: imported_results,
             skipped: skipped_results,
             failed: failed_results,
-            total: u32::try_from(total).unwrap_or(u32::MAX),
+            total: total as u32,
         })
     }
 
@@ -376,7 +377,7 @@ impl ImportCoordinator {
         // Emit initial progress
         self.progress_tracker.emit_import_progress(ImportProgress {
             current: 0,
-            total: total_count,
+            total: total_count as u32,
             current_title: "Starting validated anime import...".to_string(),
             processed: 0,
             imported_count: 0,
@@ -402,13 +403,13 @@ impl ImportCoordinator {
                     let skipped_len = counts_clone.skipped.load(Ordering::Relaxed);
 
                     progress_tracker.emit_import_progress(ImportProgress {
-                        current: current_index,
-                        total: total_count,
+                        current: current_index as u32,
+                        total: total_count as u32,
                         current_title: format!("Importing: {}", anime_title),
-                        processed: current_processed,
-                        imported_count: imported_len,
-                        failed_count: failed_len,
-                        skipped_count: skipped_len,
+                        processed: current_processed as u32,
+                        imported_count: imported_len as u32,
+                        failed_count: failed_len as u32,
+                        skipped_count: skipped_len as u32,
                     });
 
                     // Execute the import and return result with metadata
@@ -457,13 +458,13 @@ impl ImportCoordinator {
 
         // Emit final completion progress
         self.progress_tracker.emit_import_progress(ImportProgress {
-            current: total_count,
-            total: total_count,
+            current: total_count as u32,
+            total: total_count as u32,
             current_title: "Validated import completed".to_string(),
-            processed: total,
-            imported_count: imported_results.len(),
-            failed_count: failed_results.len(),
-            skipped_count: skipped_results.len(),
+            processed: total as u32,
+            imported_count: imported_results.len() as u32,
+            failed_count: failed_results.len() as u32,
+            skipped_count: skipped_results.len() as u32,
         });
 
         log_info!(
@@ -477,7 +478,7 @@ impl ImportCoordinator {
             imported: imported_results,
             skipped: skipped_results,
             failed: failed_results,
-            total: u32::try_from(total).unwrap_or(u32::MAX),
+            total: total as u32,
         })
     }
 

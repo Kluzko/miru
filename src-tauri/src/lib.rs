@@ -41,6 +41,8 @@ pub fn run() {
         get_anime_by_id,
         get_top_anime,
         get_seasonal_anime,
+        search_anime_external,
+        get_anime_by_external_id,
         // Collection commands
         create_collection,
         get_collection,
@@ -62,6 +64,13 @@ pub fn run() {
         get_enabled_providers,
         get_provider_rate_limit,
         get_age_restrictions,
+        get_provider_health_status,
+        // Provider configuration commands
+        get_provider_config,
+        update_provider_config,
+        get_all_provider_configs,
+        get_cache_statistics,
+        clear_provider_cache,
     ]);
 
     // 2) Export bindings in debug builds

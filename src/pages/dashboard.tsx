@@ -1,6 +1,6 @@
 import { TrendingUp, Library, Clock, Star } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CollectionList } from "@/features/collection/components/collection-list";
+import { CollectionsGrid } from "@/features/collection/components";
 import { useCollections } from "@/features/collection/hooks";
 
 import { useMemo } from "react";
@@ -88,7 +88,7 @@ export function DashboardPage() {
       {/* Collections */}
       <div>
         <h2 className="text-xl font-semibold mb-4">Your Collections</h2>
-        <CollectionList />
+        <CollectionsGrid />
       </div>
     </div>
   );

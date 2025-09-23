@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Loader2, AlertTriangle } from "lucide-react";
-import { useDeleteCollection } from "../hooks";
+import { useDeleteCollection } from "../../../hooks";
 import type { Collection } from "@/types";
 
 interface DeleteCollectionDialogProps {
@@ -60,8 +60,11 @@ export function DeleteCollectionDialog({
         <div className="py-4">
           <p className="text-sm text-muted-foreground">
             Are you sure you want to delete{" "}
-            <span className="font-medium text-foreground">"{collection.name}"</span>?
-            This will permanently remove the collection and all its anime associations.
+            <span className="font-medium text-foreground">
+              "{collection.name}"
+            </span>
+            ? This will permanently remove the collection and all its anime
+            associations.
           </p>
           {collection.animeIds.length > 0 && (
             <div className="mt-3 p-3 bg-muted rounded-lg">
@@ -69,7 +72,8 @@ export function DeleteCollectionDialog({
                 This collection contains {collection.animeIds.length} anime
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                The anime themselves will not be deleted, only their association with this collection.
+                The anime themselves will not be deleted, only their association
+                with this collection.
               </p>
             </div>
           )}

@@ -5,9 +5,11 @@ import { AnimeTable } from "@/features/anime/components";
 import {
   CollectionHeader,
   ImportDialog,
+} from "@/features/collection/components";
+import {
   EditCollectionDialog,
   DeleteCollectionDialog,
-} from "@/features/collection/components";
+} from "@/features/collection/components/collections-grid/modules";
 import {
   useCollection,
   useCollectionAnime,

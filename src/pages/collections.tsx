@@ -1,5 +1,5 @@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { CollectionList } from "@/features/collection/components/collection-list";
+import { CollectionsGrid } from "@/features/collection/components";
 
 export function CollectionsPage() {
   return (
@@ -11,7 +11,7 @@ export function CollectionsPage() {
           <TabsTrigger value="community">Community</TabsTrigger>
         </TabsList>
         <TabsContent value="mine">
-          <CollectionList />
+          <CollectionsGrid />
         </TabsContent>
         <TabsContent value="community">
           <h1 className="text-lg font-medium">

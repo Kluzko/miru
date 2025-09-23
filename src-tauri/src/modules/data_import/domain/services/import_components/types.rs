@@ -55,24 +55,24 @@ pub struct ExistingAnime {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Type)]
 pub struct ImportProgress {
-    pub current: usize,
-    pub total: usize,
+    pub current: u32,
+    pub total: u32,
     pub current_title: String,
-    pub processed: usize,
-    pub imported_count: usize,
-    pub failed_count: usize,
-    pub skipped_count: usize,
+    pub processed: u32,
+    pub imported_count: u32,
+    pub failed_count: u32,
+    pub skipped_count: u32,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Type)]
 pub struct ValidationProgress {
-    pub current: usize,
-    pub total: usize,
+    pub current: u32,
+    pub total: u32,
     pub current_title: String,
-    pub processed: usize,
-    pub found_count: usize,
-    pub existing_count: usize,
-    pub failed_count: usize,
+    pub processed: u32,
+    pub found_count: u32,
+    pub existing_count: u32,
+    pub failed_count: u32,
 }
 
 // ========================================================================
@@ -97,7 +97,7 @@ pub struct DataQualityMetrics {
     pub freshness_score: f32,    // How recent the data is
     pub source_reliability: f32, // Reliability of primary data source
     pub field_completeness: HashMap<String, bool>, // Which fields are complete
-    pub provider_agreements: HashMap<String, usize>, // How many providers agree on each field
+    pub provider_agreements: HashMap<String, u32>, // How many providers agree on each field
 }
 
 /// Enhanced validation result with comprehensive data analysis
@@ -116,7 +116,7 @@ pub struct EnhancedValidationResult {
 pub struct DataQualitySummary {
     pub average_completeness: f32,
     pub average_consistency: f32,
-    pub total_providers_used: usize,
+    pub total_providers_used: u32,
     pub most_reliable_provider: Option<crate::modules::provider::AnimeProvider>,
     pub fields_with_gaps: Vec<String>, // Fields that are commonly missing
 }
@@ -147,8 +147,8 @@ pub struct EnhancedImportedAnime {
 /// Statistics about data enhancement during import
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Type)]
 pub struct DataEnhancementStats {
-    pub anime_enhanced: usize,
-    pub total_fields_filled: usize,
+    pub anime_enhanced: u32,
+    pub total_fields_filled: u32,
     pub average_sources_per_anime: f32,
     pub most_enhanced_fields: Vec<String>,
     pub enhancement_success_rate: f32,

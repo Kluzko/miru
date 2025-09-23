@@ -2,13 +2,13 @@
 
 import { Label } from "@/components/ui/label";
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
-import type { AnimeProvider, ProviderStatus } from "@/types";
+import type { AnimeProvider, ProviderInfo } from "@/types";
 import { commands } from "@/types";
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -75,7 +75,7 @@ const providerInfo: Record<
 };
 
 export function ProviderSelection() {
-  const [providers, setProviders] = useState<ProviderStatus[]>([]);
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [primaryProvider, setPrimaryProvider] = useState<AnimeProvider | null>(
     null,
   );
@@ -86,8 +86,10 @@ export function ProviderSelection() {
     try {
       const result = await commands.listProviders();
       if (result.status === "ok") {
-        setProviders(result.data.providers);
-        setPrimaryProvider(result.data.primary_provider);
+        setProviders(result.data);
+        // Find the primary provider from the list
+        const primary = result.data.find((p) => p.is_primary);
+        setPrimaryProvider(primary?.provider || null);
       } else {
         console.error("Failed to load providers:", result.error);
       }
@@ -105,9 +107,9 @@ export function ProviderSelection() {
   const handleProviderChange = async (provider: string) => {
     setChanging(true);
     try {
-      const result = await commands.setPrimaryProvider({
-        provider: provider as AnimeProvider,
-      });
+      const result = await commands.setPrimaryProvider(
+        provider as AnimeProvider,
+      );
       if (result.status === "ok") {
         setPrimaryProvider(provider as AnimeProvider);
         await fetchProviders();

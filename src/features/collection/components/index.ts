@@ -1,5 +1,4 @@
-export { CollectionList } from "./collection-list";
+// Main modular components
+export { CollectionsGrid } from "./collections-grid";
 export { CollectionHeader } from "./collection-header";
 export { ImportDialog } from "./import-dialog";
-export { EditCollectionDialog } from "./edit-collection-dialog";
-export { DeleteCollectionDialog } from "./delete-collection-dialog";

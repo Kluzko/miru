@@ -23,7 +23,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Loader2 } from "lucide-react";
-import { useUpdateCollection } from "../hooks";
+import { useUpdateCollection } from "../../../hooks";
 import type { Collection } from "@/types";
 
 const editCollectionSchema = z.object({

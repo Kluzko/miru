@@ -1,4 +1,3 @@
-// src/features/collections/api.ts
 import { invoke } from "@/lib/tauri";
 import {
   AddAnimeToCollectionRequest,

@@ -244,16 +244,8 @@ export function useImportAnimeBatch() {
   return useMutation({
     mutationFn: (data: ImportAnimeBatchRequest) =>
       collectionApi.importBatch(data),
-    onSuccess: (_, variables) => {
-      // Only invalidate specific collection if targeting one
-      if (variables.collection_id) {
-        queryClient.invalidateQueries({
-          queryKey: collectionKeys.detail(variables.collection_id),
-        });
-        queryClient.invalidateQueries({
-          queryKey: collectionKeys.anime(variables.collection_id),
-        });
-      }
+    onSuccess: () => {
+      // Invalidate all collections since we don't track which collection the import is for
 
       // Invalidate anime search results since new anime may have been added
       queryClient.invalidateQueries({

@@ -2,6 +2,8 @@ use crate::modules::anime::AnimeRepository;
 use crate::shared::errors::{AppError, AppResult};
 use crate::shared::utils::logger::{LogContext, TimedOperation};
 use crate::{log_info, log_warn};
+use chrono::Datelike;
+use tauri::{AppHandle, Emitter};
 
 use std::sync::Arc;
 
@@ -10,6 +12,31 @@ use super::types::{
     ExistingAnime, ImportError, ValidatedAnime,
 };
 use crate::modules::provider::ProviderService;
+
+/// Progress event structure for real-time validation updates
+#[derive(Clone, serde::Serialize)]
+struct ValidationProgress {
+    current: u32,
+    total: u32,
+    percentage: f32,
+    current_title: String,
+    status: String,
+    found_count: u32,
+    existing_count: u32,
+    failed_count: u32,
+    average_confidence: f32,
+    providers_used: u32,
+}
+
+/// Detailed progress information for better UX
+#[derive(Clone, serde::Serialize)]
+struct ValidationStepInfo {
+    step: String,
+    description: String,
+    title: String,
+    provider: String,
+    estimated_time_remaining: u32, // seconds
+}
 
 /// Handles validation logic using existing patterns
 #[derive(Clone)]
@@ -182,16 +209,18 @@ impl ValidationService {
     pub async fn validate_single_title_enhanced(
         &self,
         title: &str,
-    ) -> Result<EnhancedValidatedAnime, ImportError> {
+    ) -> EnhancedValidationSingleResult {
         let item_timer = TimedOperation::new("validate_single_title_enhanced");
 
-        // STEP 1: Check database first (same as before)
+        // STEP 1: Check database first - return existing anime directly (no double lookup)
         match self.anime_repo.find_by_title_variations(title).await {
             Ok(Some(existing_anime)) => {
                 item_timer.finish();
-                return Err(ImportError {
-                    title: title.to_string(),
-                    reason: format!("Already exists: {}", existing_anime.title.main),
+                return EnhancedValidationSingleResult::AlreadyExists(ExistingAnime {
+                    input_title: title.to_string(),
+                    matched_title: existing_anime.title.main.clone(),
+                    matched_field: "database_title_match".to_string(),
+                    anime: existing_anime,
                 });
             }
             Ok(None) => {
@@ -214,7 +243,7 @@ impl ValidationService {
                 let provider_sources = self.extract_provider_sources(&anime);
 
                 item_timer.finish();
-                Ok(EnhancedValidatedAnime {
+                EnhancedValidationSingleResult::Found(EnhancedValidatedAnime {
                     input_title: title.to_string(),
                     anime_data: anime,
                     data_quality,
@@ -224,7 +253,7 @@ impl ValidationService {
             }
             Ok(_) => {
                 item_timer.finish();
-                Err(ImportError {
+                EnhancedValidationSingleResult::Failed(ImportError {
                     title: title.to_string(),
                     reason: "No results found on any provider".to_string(),
                 })
@@ -235,7 +264,7 @@ impl ValidationService {
                     &format!("Enhanced provider search failed for '{}'", title),
                 );
                 item_timer.finish();
-                Err(ImportError {
+                EnhancedValidationSingleResult::Failed(ImportError {
                     title: title.to_string(),
                     reason: format!("Provider search failed: {}", e),
                 })
@@ -334,10 +363,9 @@ impl ValidationService {
         let source_reliability =
             self.calculate_source_reliability(&anime.provider_metadata.primary_provider);
 
-        // For now, set consistency and freshness to reasonable defaults
-        // In future iterations, we can enhance these by comparing data across providers
-        let consistency_score = 0.85; // Based on comprehensive aggregation
-        let freshness_score = 0.90; // Assume recent data from live APIs
+        // Calculate realistic consistency and freshness scores
+        let consistency_score = self.calculate_consistency_score(&anime);
+        let freshness_score = self.calculate_freshness_score(&anime);
 
         // Provider agreements - simplified for now
         let mut provider_agreements = std::collections::HashMap::new();
@@ -377,20 +405,27 @@ impl ValidationService {
     ) -> f32 {
         let mut confidence = 0.0;
 
-        // Weighted factors for confidence calculation
-        confidence += quality.completeness_score * 0.4; // 40% weight on completeness
-        confidence += quality.consistency_score * 0.3; // 30% weight on consistency
-        confidence += quality.source_reliability * 0.2; // 20% weight on source reliability
-        confidence += quality.freshness_score * 0.1; // 10% weight on freshness
+        // Weighted factors for confidence calculation (more conservative)
+        confidence += quality.completeness_score * 0.35; // 35% weight on completeness
+        confidence += quality.consistency_score * 0.25; // 25% weight on consistency
+        confidence += quality.source_reliability * 0.25; // 25% weight on source reliability
+        confidence += quality.freshness_score * 0.15; // 15% weight on freshness
 
-        // Bonus for having external IDs (indicates provider verification)
+        // Small bonuses for additional quality indicators (reduced)
         if !anime.provider_metadata.external_ids.is_empty() {
-            confidence += 0.05;
+            confidence += 0.02; // Reduced from 0.05
         }
 
-        // Bonus for having score (indicates popularity/reliability)
         if anime.score.is_some() {
-            confidence += 0.05;
+            confidence += 0.02; // Reduced from 0.05
+        }
+
+        // Additional small penalty for missing important fields
+        if anime.synopsis.is_none() {
+            confidence -= 0.05;
+        }
+        if anime.genres.is_empty() {
+            confidence -= 0.03;
         }
 
         // Ensure confidence is between 0.0 and 1.0
@@ -409,6 +444,87 @@ impl ValidationService {
             crate::modules::provider::AnimeProvider::TMDB => 0.80,    // Good for movies/shows
             crate::modules::provider::AnimeProvider::AniDB => 0.85,   // Comprehensive but complex
         }
+    }
+
+    /// Calculate consistency score based on data quality indicators
+    fn calculate_consistency_score(&self, anime: &crate::modules::anime::AnimeDetailed) -> f32 {
+        let mut consistency = 0.5 as f32; // Base score
+
+        // Check for data consistency indicators
+        if anime.title.main.len() > 0 && anime.title.main.len() < 100 {
+            consistency += 0.1; // Reasonable title length
+        }
+
+        // Check if episodes count makes sense
+        if let Some(episodes) = anime.episodes {
+            if episodes > 0 && episodes < 10000 {
+                consistency += 0.1; // Reasonable episode count
+            }
+        }
+
+        // Check if score is reasonable
+        if let Some(score) = anime.score {
+            if score >= 0.0 && score <= 10.0 {
+                consistency += 0.1; // Score in valid range
+            }
+        }
+
+        // Check if we have basic required fields filled
+        if anime.synopsis.is_some() {
+            consistency += 0.05;
+        }
+        if !anime.genres.is_empty() {
+            consistency += 0.05;
+        }
+        if anime.image_url.is_some() {
+            consistency += 0.05;
+        }
+
+        // Penalize if data seems inconsistent
+        if anime.title.main.is_empty() {
+            consistency -= 0.2;
+        }
+
+        // Multiple providers indicate better consistency
+        if anime.provider_metadata.external_ids.len() > 1 {
+            consistency += 0.1;
+        }
+
+        consistency.min(1.0).max(0.0)
+    }
+
+    /// Calculate freshness score based on how recent the data appears
+    fn calculate_freshness_score(&self, anime: &crate::modules::anime::AnimeDetailed) -> f32 {
+        let mut freshness = 0.6 as f32; // Base score for API data
+
+        // Check if we have recent air dates
+        if let Some(aired_from) = &anime.aired.from {
+            let current_year = chrono::Utc::now().year();
+            if aired_from.year() >= current_year - 1 {
+                freshness += 0.2; // Recent anime
+            } else if aired_from.year() >= current_year - 5 {
+                freshness += 0.1; // Relatively recent
+            } else if aired_from.year() < current_year - 20 {
+                freshness -= 0.1; // Very old anime might have stale data
+            }
+        }
+
+        // Having a score indicates the data is being maintained
+        if anime.score.is_some() {
+            freshness += 0.1;
+        }
+
+        // Multiple external IDs suggest actively maintained data
+        if anime.provider_metadata.external_ids.len() > 1 {
+            freshness += 0.1;
+        }
+
+        // Image URL suggests maintained visual data
+        if anime.image_url.is_some() {
+            freshness += 0.05;
+        }
+
+        freshness.min(1.0).max(0.0)
     }
 
     /// Extract provider sources from anime metadata
@@ -433,6 +549,7 @@ impl ValidationService {
     pub async fn validate_titles_enhanced(
         &self,
         titles: Vec<String>,
+        app: Option<AppHandle>,
     ) -> AppResult<EnhancedValidationResult> {
         let _timer = TimedOperation::new("validate_titles_enhanced");
         let total_titles = titles.len();
@@ -442,6 +559,17 @@ impl ValidationService {
             total_titles
         );
 
+        // Check for duplicate titles in input
+        let unique_titles: std::collections::HashSet<_> = titles.iter().collect();
+        if unique_titles.len() != titles.len() {
+            log_warn!(
+                "DUPLICATE TITLES DETECTED: Input has {} titles but only {} unique. Duplicates: {}",
+                titles.len(),
+                unique_titles.len(),
+                titles.len() - unique_titles.len()
+            );
+        }
+
         let mut found = Vec::new();
         let mut not_found = Vec::new();
         let mut already_exists = Vec::new();
@@ -450,10 +578,23 @@ impl ValidationService {
         let mut total_consistency = 0.0;
         let mut all_providers_used = std::collections::HashSet::new();
 
-        // Process each title with enhanced validation
-        for title in &titles {
+        // Process each title with enhanced validation and emit progress events
+        for (index, title) in titles.iter().enumerate() {
+            let start_time = std::time::Instant::now();
+
+            // Emit detailed step info for better UX
+            if let Some(ref app_handle) = app {
+                let step_info = ValidationStepInfo {
+                    step: "searching".to_string(),
+                    description: format!("Searching providers for '{}'", title),
+                    title: title.clone(),
+                    provider: "multi-provider".to_string(),
+                    estimated_time_remaining: (total_titles - index - 1) as u32 * 2, // ~2s per title estimate
+                };
+                let _ = app_handle.emit("validation-step", step_info);
+            }
             match self.validate_single_title_enhanced(title).await {
-                Ok(enhanced_anime) => {
+                EnhancedValidationSingleResult::Found(enhanced_anime) => {
                     total_confidence += enhanced_anime.confidence_score;
                     total_completeness += enhanced_anime.data_quality.completeness_score;
                     total_consistency += enhanced_anime.data_quality.consistency_score;
@@ -464,26 +605,47 @@ impl ValidationService {
 
                     found.push(enhanced_anime);
                 }
-                Err(error) => {
-                    if error.reason.contains("Already exists") {
-                        // Handle existing anime case
-                        match self.anime_repo.find_by_title_variations(title).await {
-                            Ok(Some(existing_anime)) => {
-                                already_exists.push(ExistingAnime {
-                                    input_title: title.to_string(),
-                                    matched_title: existing_anime.title.main.clone(),
-                                    matched_field: "enhanced_validation".to_string(),
-                                    anime: existing_anime,
-                                });
-                            }
-                            _ => {
-                                not_found.push(error);
-                            }
-                        }
-                    } else {
-                        not_found.push(error);
-                    }
+                EnhancedValidationSingleResult::AlreadyExists(existing) => {
+                    // No double lookup needed - already handled in validate_single_title_enhanced
+                    already_exists.push(existing);
                 }
+                EnhancedValidationSingleResult::Failed(error) => {
+                    not_found.push(error);
+                }
+            }
+
+            // Emit progress update after processing each title
+            if let Some(ref app_handle) = app {
+                let current_found = found.len() as u32;
+                let current_existing = already_exists.len() as u32;
+                let current_failed = not_found.len() as u32;
+                let current_progress = (index + 1) as u32;
+                let percentage = (current_progress as f32 / total_titles as f32) * 100.0;
+
+                let current_confidence = if current_found > 0 {
+                    total_confidence / current_found as f32
+                } else {
+                    0.0
+                };
+
+                let progress = ValidationProgress {
+                    current: current_progress,
+                    total: total_titles as u32,
+                    percentage,
+                    current_title: title.clone(),
+                    status: if index + 1 == total_titles {
+                        "completed".to_string()
+                    } else {
+                        "processing".to_string()
+                    },
+                    found_count: current_found,
+                    existing_count: current_existing,
+                    failed_count: current_failed,
+                    average_confidence: current_confidence,
+                    providers_used: all_providers_used.len() as u32,
+                };
+
+                let _ = app_handle.emit("validation-progress", progress);
             }
         }
 
@@ -517,21 +679,82 @@ impl ValidationService {
         let data_quality_summary = DataQualitySummary {
             average_completeness,
             average_consistency,
-            total_providers_used: all_providers_used.len(),
+            total_providers_used: all_providers_used.len() as u32,
             most_reliable_provider,
             fields_with_gaps: self.identify_common_gaps(&found),
         };
+
+        // Emit final completion event to ensure 100% progress
+        if let Some(ref app_handle) = app {
+            let final_progress = ValidationProgress {
+                current: total_titles as u32,
+                total: total_titles as u32,
+                percentage: 100.0,
+                current_title: "Validation completed".to_string(),
+                status: "completed".to_string(),
+                found_count: found.len() as u32,
+                existing_count: already_exists.len() as u32,
+                failed_count: not_found.len() as u32,
+                average_confidence,
+                providers_used: all_providers_used.len() as u32,
+            };
+            let _ = app_handle.emit("validation-progress", final_progress);
+        }
 
         log_info!(
             "Enhanced validation completed: {} found, {} existing, {} not found. Average confidence: {:.2}",
             found.len(), already_exists.len(), not_found.len(), average_confidence
         );
 
+        // Calculate actual total from processed results (not input count)
+        let actual_total = (found.len() + not_found.len() + already_exists.len()) as u32;
+
+        log_info!(
+            "Validation totals: Input={}, Processed={} (Found={}, Existing={}, Failed={})",
+            total_titles,
+            actual_total,
+            found.len(),
+            already_exists.len(),
+            not_found.len()
+        );
+
+        // Debug log to help identify discrepancies
+        let expected_total = found.len() + already_exists.len() + not_found.len();
+        if total_titles != actual_total as usize {
+            log_warn!(
+                "INPUT vs PROCESSED MISMATCH: Input={} titles, but processed only {} results. Difference of {} titles may be due to duplicates or processing errors.",
+                total_titles,
+                actual_total,
+                total_titles as i32 - actual_total as i32
+            );
+        }
+
+        if expected_total != total_titles {
+            log_warn!(
+                "COUNTING DISCREPANCY: Input={} titles, Results: Found={}, Existing={}, Failed={}, Total={}. Extra/Missing={} titles",
+                total_titles,
+                found.len(),
+                already_exists.len(),
+                not_found.len(),
+                expected_total,
+                expected_total as i32 - total_titles as i32
+            );
+        }
+
+        log_info!(
+            "FINAL VALIDATION SUMMARY: Input={} -> Found={} new, Existing={}, Failed={}, Total processed={}",
+            total_titles,
+            found.len(),
+            already_exists.len(),
+            not_found.len(),
+            actual_total
+        );
+
         Ok(EnhancedValidationResult {
             found,
             not_found,
             already_exists,
-            total: total_titles as u32,
+            total: actual_total, // Use actual processed count, not input count
             average_confidence,
             data_quality_summary,
         })
@@ -563,6 +786,14 @@ impl ValidationService {
 #[derive(Debug)]
 pub enum ValidationSingleResult {
     Found(ValidatedAnime),
+    AlreadyExists(ExistingAnime),
+    Failed(ImportError),
+}
+
+/// Result type for enhanced single validation operations
+#[derive(Debug)]
+pub enum EnhancedValidationSingleResult {
+    Found(EnhancedValidatedAnime),
     AlreadyExists(ExistingAnime),
     Failed(ImportError),
 }

@@ -25,12 +25,12 @@ pub struct EnhancementResult {
 }
 
 /// Aggregate quality insights for a batch of anime
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct BatchQualityInsights {
-    pub total_anime: usize,
+    pub total_anime: u32,
     pub average_quality_before: f32,
     pub average_quality_after: f32,
-    pub common_gaps: HashMap<String, usize>, // field -> count
+    pub common_gaps: HashMap<String, u32>, // field -> count
     pub provider_effectiveness: HashMap<String, f32>, // provider -> avg quality
     pub enhancement_summary: Vec<String>,
 }
@@ -107,10 +107,10 @@ impl DataEnhancementService {
         enhanced_validated_anime: Vec<EnhancedValidatedAnime>,
     ) -> AppResult<(Vec<EnhancementResult>, BatchQualityInsights)> {
         let mut enhancement_results = Vec::new();
-        let mut common_gaps: HashMap<String, usize> = HashMap::new();
+        let mut common_gaps: HashMap<String, u32> = HashMap::new();
         let mut provider_effectiveness: HashMap<String, Vec<f32>> = HashMap::new();
 
-        let total_anime = enhanced_validated_anime.len();
+        let total_anime = enhanced_validated_anime.len() as u32;
         let mut total_quality_before = 0.0f32;
         let mut total_quality_after = 0.0f32;
 

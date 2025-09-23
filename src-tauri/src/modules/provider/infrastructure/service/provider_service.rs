@@ -368,6 +368,96 @@ impl ProviderService {
         Ok(merged_results.into_iter().next())
     }
 
+    /// Get anime by ID with fallback (legacy method - use get_anime_by_id_comprehensive for best results)
+    pub async fn get_anime_by_id_with_fallback(
+        &self,
+        id: &str,
+        preferred_provider: Option<AnimeProvider>,
+    ) -> AppResult<Option<AnimeDetailed>> {
+        let target_provider = preferred_provider.unwrap_or_else(|| {
+            // Try to determine provider from ID format
+            if id.parse::<i32>().is_ok() {
+                // Numeric ID could be either Jikan (MAL) or AniList
+                // Try both, but prefer primary provider
+                self.get_primary_provider_sync()
+            } else {
+                // Non-numeric ID, use primary provider
+                self.get_primary_provider_sync()
+            }
+        });
+
+        // Try primary/preferred provider first
+        {
+            let registry = self.registry.read().await;
+            if registry.is_provider_available(&target_provider) {
+                drop(registry); // Release lock before async call
+
+                let start_time = Instant::now();
+                match self
+                    .get_anime_by_id_from_provider(&target_provider, id)
+                    .await
+                {
+                    Ok(Some(anime)) => {
+                        let mut registry = self.registry.write().await;
+                        registry.record_success(&target_provider, start_time.elapsed());
+                        return Ok(Some(anime));
+                    }
+                    Ok(None) => {
+                        let mut registry = self.registry.write().await;
+                        registry.record_success(&target_provider, start_time.elapsed());
+                        // Continue to try other providers
+                    }
+                    Err(e) => {
+                        let mut registry = self.registry.write().await;
+                        registry.record_failure(&target_provider);
+                        LogContext::error_with_context(
+                            &e,
+                            &format!(
+                                "Provider {:?} failed for get_by_id '{}'",
+                                target_provider, id
+                            ),
+                        );
+                        // Continue to try other providers
+                    }
+                }
+            }
+        }
+
+        // Try other providers as fallback
+        let enabled_providers = self.get_enabled_providers().await;
+        for provider in enabled_providers {
+            if provider == target_provider {
+                continue; // Already tried
+            }
+
+            let start_time = Instant::now();
+            match self.get_anime_by_id_from_provider(&provider, id).await {
+                Ok(Some(anime)) => {
+                    log_debug!("Used fallback provider {:?} for get_by_id", provider);
+                    let mut registry = self.registry.write().await;
+                    registry.record_success(&provider, start_time.elapsed());
+                    return Ok(Some(anime));
+                }
+                Ok(None) => {
+                    let mut registry = self.registry.write().await;
+                    registry.record_success(&provider, start_time.elapsed());
+                    continue;
+                }
+                Err(e) => {
+                    let mut registry = self.registry.write().await;
+                    registry.record_failure(&provider);
+                    LogContext::error_with_context(
+                        &e,
+                        &format!("Provider {:?} failed for get_by_id '{}'", provider, id),
+                    );
+                    continue;
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
     /// Helper to get anime by ID from a specific provider
     async fn get_anime_by_id_from_provider(
         &self,
@@ -390,7 +480,6 @@ impl ProviderService {
         // In real implementation, you might want to use a cached value
         AnimeProvider::default()
     }
-
     /// Search using a specific provider (lock-free)
     async fn search_with_provider(
         &self,

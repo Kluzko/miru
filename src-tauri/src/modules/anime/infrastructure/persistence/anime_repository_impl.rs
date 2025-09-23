@@ -560,6 +560,10 @@ impl AnimeRepository for AnimeRepositoryImpl {
         &self,
         search_title: &str,
     ) -> AppResult<Option<AnimeDetailed>> {
+        log_debug!(
+            "SEARCHING for existing anime with title: '{}'",
+            search_title
+        );
         let search_title_lower = search_title.to_lowercase();
         let search_pattern = format!("%{}%", search_title_lower);
         let exact_pattern = search_title_lower.clone();
@@ -652,8 +656,14 @@ impl AnimeRepository for AnimeRepositoryImpl {
 
         let anime_models = result?;
         if anime_models.is_empty() {
+            log_debug!(
+                "SEARCH RESULT: No existing anime found for title: '{}'",
+                search_title
+            );
             Ok(None)
         } else {
+            log_debug!("SEARCH RESULT: Found {} existing anime for title: '{}', using first match with ID: {}",
+                      anime_models.len(), search_title, anime_models[0].id);
             // Load the first match with full relations
             let anime_with_relations = self.load_anime_batch_with_relations(anime_models).await?;
             Ok(anime_with_relations.into_iter().next())
@@ -775,6 +785,10 @@ impl AnimeRepositoryImpl {
         task::spawn_blocking(move || -> AppResult<Anime> {
             let mut conn = db.get_connection()?;
 
+            log_debug!(
+                "Starting database transaction for anime: {}",
+                anime_clone.title.main
+            );
             conn.transaction::<Anime, AppError, _>(|conn| {
                 // First, check if anime already exists by external ID
                 let existing_anime_id = {
@@ -812,11 +826,17 @@ impl AnimeRepositoryImpl {
 
                 let saved_anime = if let Some(existing_id) = existing_anime_id {
                     // Update existing anime
+                    log_debug!(
+                        "UPDATING existing anime with ID: {} for title: {}",
+                        existing_id,
+                        anime_clone.title.main
+                    );
                     diesel::update(anime::table.filter(anime::id.eq(existing_id)))
                         .set(&changes)
                         .get_result::<Anime>(conn)?
                 } else {
                     // Insert new anime
+                    log_debug!("INSERTING new anime for title: {}", anime_clone.title.main);
                     diesel::insert_into(anime::table)
                         .values(&new_anime)
                         .get_result::<Anime>(conn)?
@@ -836,6 +856,11 @@ impl AnimeRepositoryImpl {
                     )?;
                 }
 
+                log_debug!(
+                    "DATABASE TRANSACTION COMPLETED for anime: {} (ID: {})",
+                    anime_clone.title.main,
+                    saved_anime.id
+                );
                 Ok(saved_anime)
             })
         })

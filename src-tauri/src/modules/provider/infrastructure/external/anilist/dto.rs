@@ -141,7 +141,14 @@ pub struct AniListExternalLink {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AniListStudiosConnection {
-    pub nodes: Vec<AniListStudio>,
+    pub edges: Vec<AniListStudioEdge>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AniListStudioEdge {
+    #[serde(rename = "isMain")]
+    pub is_main: Option<bool>,
+    pub node: AniListStudio,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

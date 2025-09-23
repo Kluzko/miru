@@ -2,7 +2,7 @@ use super::super::domain::{
     entities::anime_detailed::AnimeDetailed, repositories::anime_repository::AnimeRepository,
     services::score_calculator::ScoreCalculator,
 };
-use crate::modules::provider::ProviderService;
+use crate::modules::provider::{AnimeProvider, ProviderService};
 use crate::shared::errors::AppResult;
 use crate::shared::utils::logger::LogContext;
 use crate::{log_debug, log_info};
@@ -29,47 +29,18 @@ impl AnimeService {
     }
 
     pub async fn search_anime(&self, query: &str) -> AppResult<Vec<AnimeDetailed>> {
-        // First, search in local database with improved search
-        let db_results = self.anime_repo.search(query, 20).await?;
+        // Use comprehensive search which aggregates data from multiple providers
+        let comprehensive_results = self
+            .provider_service
+            .search_anime_comprehensive(query, 20)
+            .await?;
 
-        // Check for quality matches - look for exact or very close matches
-        let has_good_matches = db_results.iter().any(|anime| {
-            let query_lower = query.to_lowercase();
-            let title_main = anime.title.main.to_lowercase();
-            let title_english = anime.title.english.as_ref().map(|t| t.to_lowercase());
-            let title_japanese = anime.title.japanese.as_ref().map(|t| t.to_lowercase());
-
-            // Check for exact matches or titles starting with query
-            title_main == query_lower
-                || title_main.starts_with(&query_lower)
-                || title_english
-                    .as_ref()
-                    .map_or(false, |t| *t == query_lower || t.starts_with(&query_lower))
-                || title_japanese
-                    .as_ref()
-                    .map_or(false, |t| *t == query_lower || t.starts_with(&query_lower))
-        });
-
-        // If we have good quality matches OR sufficient quantity, return database results
-        if has_good_matches || db_results.len() >= 3 {
-            return Ok(db_results);
-        }
-
-        // Otherwise, search via provider service for potentially better results
-        let provider_results = self.provider_service.search_anime(query, 10).await?;
-
-        if !provider_results.is_empty() {
-            log_debug!(
-                "Database search yielded {} results, trying external APIs for '{}'",
-                db_results.len(),
-                query
-            );
-
+        if !comprehensive_results.is_empty() {
             // Save new anime to database (the repository will handle duplicates)
-            for anime in &provider_results {
+            for anime in &comprehensive_results {
                 match self.anime_repo.save(anime).await {
                     Ok(_) => log_info!(
-                        "Successfully saved anime from external API: {}",
+                        "Successfully saved anime from comprehensive search: {}",
                         anime.title.main
                     ),
                     Err(e) => LogContext::error_with_context(
@@ -79,16 +50,20 @@ impl AnimeService {
                 }
             }
 
-            // Search again to get all results (including newly saved ones)
-            let combined_results = self.anime_repo.search(query, 20).await?;
             log_info!(
-                "After external API search and save, found {} total results",
-                combined_results.len()
+                "Comprehensive search found {} results for '{}'",
+                comprehensive_results.len(),
+                query
             );
-            return Ok(combined_results);
+            return Ok(comprehensive_results);
         }
 
-        // If external APIs also failed, return what we found in the database
+        // If comprehensive search fails, fall back to database search
+        let db_results = self.anime_repo.search(query, 20).await?;
+        log_debug!(
+            "Comprehensive search failed, falling back to database: {} results",
+            db_results.len()
+        );
         Ok(db_results)
     }
 
@@ -164,5 +139,54 @@ impl AnimeService {
     #[allow(dead_code)]
     pub async fn delete_anime(&self, id: &Uuid) -> AppResult<()> {
         self.anime_repo.delete(id).await
+    }
+
+    /// External-only search without database interaction
+    /// Use when you want fresh external data without saving to DB
+    pub async fn search_anime_external_only(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> AppResult<Vec<AnimeDetailed>> {
+        log_debug!("External-only search for '{}' with limit {}", query, limit);
+
+        let results = self
+            .provider_service
+            .search_anime_comprehensive(query, limit)
+            .await?;
+
+        log_info!(
+            "External-only search found {} results for '{}'",
+            results.len(),
+            query
+        );
+
+        Ok(results)
+    }
+
+    /// Get anime by external provider ID (e.g., AniList ID, MAL ID)
+    /// Use when you have a specific provider ID and want comprehensive data
+    pub async fn get_anime_by_external_id(
+        &self,
+        id: &str,
+        preferred_provider: Option<AnimeProvider>,
+    ) -> AppResult<Option<AnimeDetailed>> {
+        log_debug!(
+            "Getting anime by external ID '{}' with provider {:?}",
+            id,
+            preferred_provider
+        );
+
+        let result = self
+            .provider_service
+            .get_anime_by_id_comprehensive(id, preferred_provider)
+            .await?;
+
+        match &result {
+            Some(anime) => log_info!("Found anime by external ID '{}': {}", id, anime.title.main),
+            None => log_debug!("No anime found for external ID '{}'", id),
+        }
+
+        Ok(result)
     }
 }

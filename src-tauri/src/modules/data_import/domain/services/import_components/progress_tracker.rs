@@ -39,6 +39,10 @@ impl ProgressTracker {
         self
     }
 
+    pub fn get_app_handle(&self) -> Option<tauri::AppHandle> {
+        self.app_handle.as_ref().map(|handle| (**handle).clone())
+    }
+
     pub fn emit_import_progress(&self, progress: ImportProgress) -> bool {
         if let Some(ref app) = self.app_handle {
             match app.emit("import_progress", &progress) {
