@@ -6,6 +6,4 @@ pub mod domain;
 pub use application::service::ImportService;
 
 // Re-export common types for shorter imports
-pub use domain::services::import_components::types::{
-    ImportResult, ValidatedAnime, ValidationResult,
-};
+pub use domain::services::import_components::types::{ImportResult, ValidatedAnime};

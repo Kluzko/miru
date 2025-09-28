@@ -42,6 +42,12 @@ pub enum AppError {
 
     #[error("Duplicate entry: {0}")]
     Duplicate(String),
+
+    #[error("Service unavailable: {0}")]
+    ServiceUnavailable(String),
+
+    #[error("Mapping error: {0}")]
+    MappingError(String),
 }
 
 impl From<diesel::result::Error> for AppError {
@@ -132,6 +138,12 @@ impl From<std::num::ParseFloatError> for AppError {
 impl From<std::env::VarError> for AppError {
     fn from(err: std::env::VarError) -> Self {
         AppError::InternalError(format!("Environment variable error: {}", err))
+    }
+}
+
+impl From<String> for AppError {
+    fn from(err: String) -> Self {
+        AppError::ValidationError(err)
     }
 }
 

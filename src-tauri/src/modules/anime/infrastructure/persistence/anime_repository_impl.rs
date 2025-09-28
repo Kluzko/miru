@@ -10,7 +10,6 @@ use uuid::Uuid;
 // use crate::shared::utils::logger::{LogContext, TimedOperation};
 use crate::{log_debug, log_error, log_warn};
 
-use super::anime_model::*;
 use crate::modules::anime::domain::{
     entities::{
         anime_detailed::{AiredDates, AnimeDetailed},
@@ -19,6 +18,7 @@ use crate::modules::anime::domain::{
     repositories::anime_repository::AnimeRepository,
     value_objects::{anime_title::AnimeTitle, quality_metrics::QualityMetrics},
 };
+use crate::modules::anime::infrastructure::models::*;
 use crate::modules::provider::{AnimeProvider, ProviderMetadata};
 use crate::schema::{anime, anime_genres, anime_studios, genres, quality_metrics, studios};
 use crate::shared::Database;
@@ -70,8 +70,10 @@ impl AnimeRepositoryImpl {
             title,
             provider_metadata,
             score: model.score,
+            rating: model.score, // Alias for score
             favorites: model.favorites.map(|v| v as u32),
-            synopsis: model.synopsis,
+            synopsis: model.synopsis.clone(),
+            description: model.synopsis, // Alias for synopsis
             episodes: model.episodes.map(|v| v as u16),
             status: model.status,
             aired: AiredDates {
@@ -84,7 +86,8 @@ impl AnimeRepositoryImpl {
             studios,
             source: model.source,
             duration: model.duration,
-            image_url: model.image_url,
+            image_url: model.image_url.clone(),
+            images: model.image_url, // Alias for image_url
             banner_image: model.banner_image,
             trailer_url: model.trailer_url,
             composite_score: model.composite_score,
@@ -100,6 +103,11 @@ impl AnimeRepositoryImpl {
 
     // Helper: Convert AnimeDetailed to NewAnime for insertion
     fn entity_to_new_model(entity: &AnimeDetailed) -> NewAnime {
+        log::info!(
+            "DB SAVE: Converting AnimeDetailed '{}' to NewAnime - age_restriction: {:?}",
+            entity.title.main,
+            entity.age_restriction
+        );
         NewAnime {
             id: entity.id,
             title_english: entity.title.english.clone(),
@@ -130,7 +138,14 @@ impl AnimeRepositoryImpl {
             quality_metrics: Some(
                 serde_json::to_value(&entity.quality_metrics).unwrap_or(serde_json::Value::Null),
             ),
-            age_restriction: entity.age_restriction.clone(),
+            age_restriction: {
+                let age_restriction = entity.age_restriction.clone();
+                log::info!(
+                    "DB SAVE: NewAnime age_restriction field set to: {:?}",
+                    age_restriction
+                );
+                age_restriction
+            },
             status: entity.status.clone(),
             anime_type: entity.anime_type.clone(),
             last_synced_at: entity.last_synced_at,

@@ -1,5 +1,5 @@
 use crate::log_info;
-use crate::modules::anime::AnimeRepository;
+use crate::modules::anime::{AnimeRepository, AnimeService};
 use crate::shared::errors::AppError;
 use crate::shared::utils::logger::{LogContext, TimedOperation};
 
@@ -8,15 +8,19 @@ use std::sync::Arc;
 use super::types::{ImportError, ImportedAnime, ValidatedAnime};
 use super::validation_service::ValidationService;
 
-/// Handles import execution using existing save logic
+/// Handles import execution using proper service layer for clean architecture
 #[derive(Clone)]
 pub struct ImportExecutor {
     anime_repo: Arc<dyn AnimeRepository>,
+    anime_service: Arc<AnimeService>,
 }
 
 impl ImportExecutor {
-    pub fn new(anime_repo: Arc<dyn AnimeRepository>) -> Self {
-        Self { anime_repo }
+    pub fn new(anime_repo: Arc<dyn AnimeRepository>, anime_service: Arc<AnimeService>) -> Self {
+        Self {
+            anime_repo,
+            anime_service,
+        }
     }
 
     /// Execute import for a single validated anime using existing logic
@@ -75,8 +79,8 @@ impl ImportExecutor {
             }
         }
 
-        // STEP 2: Save to database with proper error handling (reused from existing)
-        match self.anime_repo.save(&validated.anime_data).await {
+        // STEP 2: Save to database using service layer for proper score calculation
+        match self.anime_service.create_anime(&validated.anime_data).await {
             Ok(saved_anime) => {
                 let (saved_external_id, saved_provider) =
                     ValidationService::get_primary_external_info(&saved_anime);

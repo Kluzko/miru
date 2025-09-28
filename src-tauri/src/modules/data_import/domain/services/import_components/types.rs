@@ -7,6 +7,8 @@ pub struct ImportResult {
     pub failed: Vec<ImportError>,
     pub skipped: Vec<SkippedAnime>,
     pub total: u32,
+    #[specta(type = u32)]
+    pub duration_ms: u64,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Type)]
@@ -37,6 +39,8 @@ pub struct ValidationResult {
     pub not_found: Vec<ImportError>,
     pub already_exists: Vec<ExistingAnime>,
     pub total: u32,
+    #[specta(type = u32)]
+    pub validation_duration_ms: u64,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Type)]
@@ -68,11 +72,15 @@ pub struct ImportProgress {
 pub struct ValidationProgress {
     pub current: u32,
     pub total: u32,
+    pub percentage: f32,
     pub current_title: String,
+    pub status: String,
     pub processed: u32,
     pub found_count: u32,
     pub existing_count: u32,
     pub failed_count: u32,
+    pub average_confidence: f32,
+    pub providers_used: u32,
 }
 
 // ========================================================================
@@ -109,6 +117,8 @@ pub struct EnhancedValidationResult {
     pub total: u32,
     pub average_confidence: f32,
     pub data_quality_summary: DataQualitySummary,
+    #[specta(type = u32)]
+    pub validation_duration_ms: u64,
 }
 
 /// Summary of data quality across all validated anime

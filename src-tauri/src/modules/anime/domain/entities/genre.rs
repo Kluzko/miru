@@ -8,6 +8,15 @@ pub struct Genre {
     pub name: String,
 }
 
+impl Genre {
+    pub fn new(name: String) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            name,
+        }
+    }
+}
+
 impl std::fmt::Display for Genre {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)

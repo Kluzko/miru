@@ -1,4 +1,5 @@
 pub mod database;
+pub mod domain;
 pub mod errors;
 pub mod utils;
 

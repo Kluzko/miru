@@ -1,6 +1,12 @@
+pub mod entities;
+pub mod repositories;
 pub mod services;
 pub mod value_objects;
 
 // Re-exports for easy access
-pub use services::ProviderFactoryManager;
-pub use value_objects::{provider_enum::AnimeProvider, provider_metadata::ProviderMetadata};
+pub use entities::*;
+pub use services::{AnimeSearchService, ProviderSelectionService};
+pub use value_objects::{
+    provider_enum::AnimeProvider, provider_metadata::ProviderMetadata, GetDetailsCriteria,
+    SearchCriteria,
+};

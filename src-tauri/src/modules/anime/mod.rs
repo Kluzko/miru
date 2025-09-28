@@ -8,7 +8,6 @@ pub use application::service::AnimeService;
 pub use domain::{AnimeDetailed, AnimeRepository};
 
 // Re-export common value objects for shorter imports
-pub use domain::value_objects::{AnimeStatus, AnimeTier, AnimeType, UnifiedAgeRestriction};
+pub use domain::value_objects::{AnimeStatus, AnimeTier, AnimeType};
 
 // Re-export infrastructure components
-pub use infrastructure::mappers::age_restriction_mapper::AgeRestrictionMapper;

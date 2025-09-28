@@ -20,7 +20,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useSettingsStore, type TitleLanguage } from "@/stores/settings-store";
-import { ProviderSelection } from "@/components/settings/provider-selection";
+
 import { Info, Monitor, Database } from "lucide-react";
 
 export function SettingsPage() {
@@ -102,27 +102,6 @@ export function SettingsPage() {
                     and details.
                   </p>
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Provider Section */}
-            <Card className="shadow-sm border-0 bg-card/50 backdrop-blur-sm">
-              <CardHeader className="pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10">
-                    <Database className="h-5 w-5 text-primary" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-xl">Data Provider</CardTitle>
-                    <CardDescription className="text-sm">
-                      Configure which anime data provider to use as your primary
-                      source.
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <ProviderSelection />
               </CardContent>
             </Card>
           </div>

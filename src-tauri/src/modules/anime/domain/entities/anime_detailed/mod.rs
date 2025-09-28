@@ -1,9 +1,9 @@
-use super::super::traits::Scoreable;
 use super::genre::Genre;
 use crate::modules::anime::domain::value_objects::{
-    AnimeStatus, AnimeTier, AnimeTitle, AnimeType, QualityMetrics, UnifiedAgeRestriction,
+    AnimeStatus, AnimeTier, AnimeTitle, AnimeType, QualityMetrics,
 };
 use crate::modules::provider::domain::{AnimeProvider, ProviderMetadata};
+use crate::shared::domain::value_objects::UnifiedAgeRestriction;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -16,7 +16,7 @@ mod scoring;
 // ================================================================================================
 
 /// Air date range for anime
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 pub struct AiredDates {
     pub from: Option<DateTime<Utc>>,
     pub to: Option<DateTime<Utc>>,
@@ -27,7 +27,7 @@ pub struct AiredDates {
 // ================================================================================================
 
 /// Comprehensive anime entity with full information for detailed views
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AnimeDetailed {
     // Core identification
@@ -39,10 +39,12 @@ pub struct AnimeDetailed {
 
     // Scoring information (unified across providers, 0-10 scale)
     pub score: Option<f32>,
+    pub rating: Option<f32>,    // Alias for score
     pub favorites: Option<u32>, // Used as engagement metric
 
     // Content information
     pub synopsis: Option<String>,
+    pub description: Option<String>, // Alias for synopsis
     pub episodes: Option<u16>,
     pub status: AnimeStatus,
     pub aired: AiredDates,
@@ -59,6 +61,7 @@ pub struct AnimeDetailed {
 
     // Media content
     pub image_url: Option<String>,
+    pub images: Option<String>, // Alias for image_url
     pub banner_image: Option<String>,
     pub trailer_url: Option<String>,
 
@@ -76,35 +79,7 @@ pub struct AnimeDetailed {
 // ================================================================================================
 // TRAIT IMPLEMENTATIONS
 // ================================================================================================
-
-impl Scoreable for AnimeDetailed {
-    fn score(&self) -> Option<f32> {
-        self.score
-    }
-
-    fn scored_by(&self) -> Option<i32> {
-        // Use favorites as engagement metric since we removed scored_by
-        self.favorites.map(|v| v as i32)
-    }
-
-    fn popularity(&self) -> Option<i32> {
-        // Use internal calculation instead of external popularity
-        None
-    }
-
-    fn members(&self) -> Option<i32> {
-        // Use favorites as member engagement proxy
-        self.favorites.map(|v| v as i32)
-    }
-
-    fn favorites(&self) -> Option<i32> {
-        self.favorites.map(|v| v as i32)
-    }
-
-    fn aired_from(&self) -> Option<DateTime<Utc>> {
-        self.aired.from
-    }
-}
+// Scoreable trait implementation is in scoring.rs module
 
 // ================================================================================================
 // CORE IMPLEMENTATION
@@ -121,8 +96,10 @@ impl AnimeDetailed {
             title: AnimeTitle::new(title),
             provider_metadata: ProviderMetadata::new(primary_provider, external_id),
             score: None,
+            rating: None,
             favorites: None,
             synopsis: None,
+            description: None,
             episodes: None,
             status: AnimeStatus::Unknown,
             aired: AiredDates {
@@ -136,6 +113,7 @@ impl AnimeDetailed {
             source: None,
             duration: None,
             image_url: None,
+            images: None,
             banner_image: None,
             trailer_url: None,
             composite_score: 0.0,

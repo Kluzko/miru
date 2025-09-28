@@ -7,8 +7,6 @@ pub mod types;
 pub mod validation_service;
 
 // Re-export main types for public API
-pub use data_enhancement_service::{
-    BatchQualityInsights, DataEnhancementService, EnhancementResult,
-};
+pub use data_enhancement_service::{BatchQualityInsights, DataEnhancementService};
 pub use import_coordinator::ImportCoordinator;
 pub use types::*;

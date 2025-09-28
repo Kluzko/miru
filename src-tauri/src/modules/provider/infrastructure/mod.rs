@@ -1,3 +1,9 @@
-pub mod cache;
-pub mod external;
-pub mod service;
+// Clean architecture modules
+pub mod adapters;
+pub mod http_client;
+pub mod monitoring;
+
+// Re-export commonly used types
+pub use adapters::ProviderRepositoryAdapter;
+pub use http_client::{RateLimitClient, RetryPolicy};
+pub use monitoring::{HealthMonitor, MetricsCollector};

@@ -99,9 +99,35 @@ impl ScoreCalculator {
         QualityMetrics {
             popularity_score: self.popularity_score(anime).unwrap_or(0.0),
             engagement_score: self.engagement_score(anime).unwrap_or(0.0),
-            consistency_score: anime.score().unwrap_or(0.0),
+            consistency_score: self.consistency_score(anime),
             audience_reach_score: self.audience_reach_score(anime).unwrap_or(0.0),
         }
+    }
+
+    /// Calculate consistency score based on multiple data points
+    fn consistency_score(&self, anime: &dyn Scoreable) -> f32 {
+        let mut consistency_factors = Vec::new();
+
+        // Score consistency (normalize to 0-10 scale)
+        if let Some(score) = anime.score() {
+            consistency_factors.push(score);
+        }
+
+        // Engagement consistency (favorites presence)
+        if anime.favorites().is_some() {
+            consistency_factors.push(8.0); // High score for having engagement data
+        }
+
+        // Air date consistency
+        if anime.aired_from().is_some() {
+            consistency_factors.push(7.0); // Good score for having air date
+        }
+
+        if consistency_factors.is_empty() {
+            return 0.0;
+        }
+
+        consistency_factors.iter().sum::<f32>() / consistency_factors.len() as f32
     }
 
     pub fn determine_tier(&self, score: f32) -> AnimeTier {

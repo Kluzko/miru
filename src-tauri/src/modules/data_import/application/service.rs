@@ -50,13 +50,37 @@ impl ImportService {
 
         // Step 2: Data enhancement for quality improvement
         let enhancement_service = DataEnhancementService::new(self.provider_service.clone());
-        let (_enhancement_results, quality_insights) = enhancement_service
-            .enhance_batch(enhanced_validation_result.found.clone())
+
+        // Skip provider fetch since validation already used comprehensive provider data
+        let skip_provider_fetch = true;
+        let (enhancement_results, quality_insights) = enhancement_service
+            .enhance_batch(
+                enhanced_validation_result.found.clone(),
+                skip_provider_fetch,
+            )
             .await?;
 
-        // Step 3: Import enhanced validated anime
+        // Step 3: Apply enhanced data back to validated anime
+        let mut enhanced_validated_anime = Vec::new();
+        for (original_validated, enhancement_result) in enhanced_validation_result
+            .found
+            .into_iter()
+            .zip(enhancement_results.into_iter())
+        {
+            enhanced_validated_anime.push(
+                super::super::domain::services::import_components::EnhancedValidatedAnime {
+                    input_title: original_validated.input_title,
+                    anime_data: enhancement_result.enhanced_anime, // Use enhanced data
+                    data_quality: original_validated.data_quality,
+                    provider_sources: original_validated.provider_sources,
+                    confidence_score: enhancement_result.quality_score_after, // Use enhanced confidence
+                },
+            );
+        }
+
+        // Step 4: Import enhanced validated anime with preserved enhancements
         let import_result = coordinator
-            .import_enhanced_validated_anime(enhanced_validation_result.found)
+            .import_enhanced_validated_anime(enhanced_validated_anime)
             .await?;
 
         Ok((import_result, quality_insights))

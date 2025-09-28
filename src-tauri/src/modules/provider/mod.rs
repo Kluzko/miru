@@ -1,11 +1,10 @@
-pub mod commands;
+// Clean architecture modules
+pub mod application;
 pub mod domain;
 pub mod infrastructure;
-pub mod traits;
 
-// Re-exports for easy external access - only export what's actually used
-pub use domain::{AnimeProvider, ProviderFactoryManager, ProviderMetadata};
-pub use infrastructure::service::ProviderService;
+// Primary exports - Clean Architecture
+pub use application::service::ProviderService;
 
-// Legacy exports for backward compatibility
-pub use infrastructure::cache::ProviderCache;
+pub use domain::value_objects::*;
+pub use infrastructure::adapters::{AniListAdapter, JikanAdapter, ProviderAdapter};

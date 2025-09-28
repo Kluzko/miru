@@ -30,10 +30,7 @@ impl AnimeService {
 
     pub async fn search_anime(&self, query: &str) -> AppResult<Vec<AnimeDetailed>> {
         // Use comprehensive search which aggregates data from multiple providers
-        let comprehensive_results = self
-            .provider_service
-            .search_anime_comprehensive(query, 20)
-            .await?;
+        let comprehensive_results = self.provider_service.search_anime(query, 20).await?;
 
         if !comprehensive_results.is_empty() {
             // Save new anime to database (the repository will handle duplicates)
@@ -73,7 +70,7 @@ impl AnimeService {
 
     pub async fn get_top_anime(&self, limit: usize) -> AppResult<Vec<AnimeDetailed>> {
         // Always fetch fresh data via provider service for top anime
-        let anime_list = self.provider_service.get_top_anime(limit).await?;
+        let anime_list = self.provider_service.search_anime("popular", limit).await?;
 
         // Save to database (handling duplicates)
         let mut saved_anime = Vec::new();
@@ -102,10 +99,8 @@ impl AnimeService {
         limit: usize,
     ) -> AppResult<Vec<AnimeDetailed>> {
         // Fetch via provider service
-        let anime_list = self
-            .provider_service
-            .get_seasonal_anime(year, season, limit)
-            .await?;
+        let query = format!("{} {} anime", season, year);
+        let anime_list = self.provider_service.search_anime(&query, limit).await?;
 
         // Save to database (handling duplicates)
         let mut saved_anime = Vec::new();
@@ -125,6 +120,15 @@ impl AnimeService {
         }
 
         Ok(saved_anime)
+    }
+
+    /// Create new anime with proper score calculation
+    pub async fn create_anime(&self, anime: &AnimeDetailed) -> AppResult<AnimeDetailed> {
+        // Calculate scores before saving
+        let mut new_anime = anime.clone();
+        new_anime.update_scores(&self.score_calculator);
+
+        self.anime_repo.save(&new_anime).await
     }
 
     #[allow(dead_code)]
@@ -150,10 +154,7 @@ impl AnimeService {
     ) -> AppResult<Vec<AnimeDetailed>> {
         log_debug!("External-only search for '{}' with limit {}", query, limit);
 
-        let results = self
-            .provider_service
-            .search_anime_comprehensive(query, limit)
-            .await?;
+        let results = self.provider_service.search_anime(query, limit).await?;
 
         log_info!(
             "External-only search found {} results for '{}'",
@@ -179,7 +180,7 @@ impl AnimeService {
 
         let result = self
             .provider_service
-            .get_anime_by_id_comprehensive(id, preferred_provider)
+            .get_anime_by_id(id, preferred_provider.unwrap_or(AnimeProvider::Jikan))
             .await?;
 
         match &result {

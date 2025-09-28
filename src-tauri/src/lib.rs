@@ -1,6 +1,8 @@
-mod modules;
+#![recursion_limit = "512"]
+
+pub mod modules;
 mod schema;
-mod shared;
+pub mod shared;
 
 // Log macros are exported by the logger module
 
@@ -10,7 +12,10 @@ use modules::{
         commands::*, infrastructure::persistence::CollectionRepositoryImpl, CollectionService,
     },
     data_import::{commands::*, ImportService},
-    provider::{commands::*, ProviderService},
+    provider::{
+        application::service::ProviderService,
+        infrastructure::adapters::{CacheAdapter, ProviderRepositoryAdapter},
+    },
 };
 use shared::database::Database;
 // Validation functionality - prepared but not yet integrated
@@ -57,20 +62,7 @@ pub fn run() {
         import_anime_batch,
         validate_anime_titles,
         import_validated_anime,
-        // Provider commands
-        list_providers,
-        set_primary_provider,
-        get_primary_provider,
-        get_enabled_providers,
-        get_provider_rate_limit,
-        get_age_restrictions,
-        get_provider_health_status,
-        // Provider configuration commands
-        get_provider_config,
-        update_provider_config,
-        get_all_provider_configs,
-        get_cache_statistics,
-        clear_provider_cache,
+        // Provider commands are not included in specta due to async limitations
     ]);
 
     // 2) Export bindings in debug builds
@@ -81,11 +73,30 @@ pub fn run() {
     }
 
     // 3) Create the invoke handler BEFORE moving `specta_builder` into the setup closure
-    let invoke_handler = specta_builder.invoke_handler();
 
     tauri::Builder::default()
-        // Tell Tauri how to invoke commands (uses the handler we created above)
-        .invoke_handler(invoke_handler)
+        // Tell Tauri how to invoke commands (combines specta handler with provider commands)
+        .invoke_handler(tauri::generate_handler![
+            // Specta-generated commands
+            search_anime,
+            get_anime_by_id,
+            get_top_anime,
+            get_seasonal_anime,
+            search_anime_external,
+            get_anime_by_external_id,
+            create_collection,
+            get_collection,
+            get_all_collections,
+            update_collection,
+            delete_collection,
+            add_anime_to_collection,
+            remove_anime_from_collection,
+            get_collection_anime,
+            update_anime_in_collection,
+            import_anime_batch,
+            validate_anime_titles,
+            import_validated_anime
+        ])
         .plugin(tauri_plugin_opener::init())
         .setup(move |app| {
             // If you want typed events, mount specta's event hooks here.
@@ -125,7 +136,9 @@ pub fn run() {
             }
 
             // Initialize lock-free provider service
-            let provider_service = Arc::new(ProviderService::new());
+            let provider_repo = Arc::new(ProviderRepositoryAdapter::new());
+            let cache_repo = Arc::new(CacheAdapter::new());
+            let provider_service = Arc::new(ProviderService::new(provider_repo, cache_repo));
 
             // Initialize repositories
             let anime_repo: Arc<dyn modules::anime::AnimeRepository> =

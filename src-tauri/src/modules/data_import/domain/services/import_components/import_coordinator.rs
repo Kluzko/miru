@@ -1,5 +1,5 @@
 use crate::log_info;
-use crate::modules::anime::AnimeRepository;
+use crate::modules::anime::{AnimeRepository, AnimeService};
 use crate::modules::provider::ProviderService;
 use crate::shared::errors::AppResult;
 use crate::shared::utils::logger::TimedOperation;
@@ -42,7 +42,13 @@ impl ImportCoordinator {
     ) -> Self {
         let validation_service =
             ValidationService::new(anime_repo.clone(), provider_service.clone());
-        let import_executor = ImportExecutor::new(anime_repo.clone());
+
+        // Create AnimeService for proper business logic handling
+        let anime_service = Arc::new(AnimeService::new(
+            anime_repo.clone(),
+            provider_service.clone(),
+        ));
+        let import_executor = ImportExecutor::new(anime_repo.clone(), anime_service);
         let progress_tracker = ProgressTracker::new(app_handle);
 
         Self {
@@ -58,6 +64,7 @@ impl ImportCoordinator {
         titles: Vec<String>,
     ) -> AppResult<EnhancedValidationResult> {
         let _timer = TimedOperation::new("validate_anime_titles_enhanced");
+        let start_time = std::time::Instant::now();
         let total_titles = titles.len();
 
         log_info!(
@@ -74,11 +81,15 @@ impl ImportCoordinator {
         progress_tracker.emit_validation_progress(ValidationProgress {
             current: 0,
             total: total_titles as u32,
+            percentage: 0.0,
             current_title: "Starting enhanced validation...".to_string(),
+            status: "starting".to_string(),
             processed: 0,
             found_count: 0,
             existing_count: 0,
             failed_count: 0,
+            average_confidence: 0.0,
+            providers_used: 0,
         });
 
         // Small delay to ensure frontend receives initial event
@@ -96,15 +107,21 @@ impl ImportCoordinator {
         progress_tracker.emit_validation_progress(ValidationProgress {
             current: total_titles as u32,
             total: total_titles as u32,
+            percentage: 100.0,
             current_title: "Enhanced validation completed".to_string(),
+            status: "completed".to_string(),
             processed: total_titles as u32,
             found_count: result.found.len() as u32,
             existing_count: result.already_exists.len() as u32,
             failed_count: result.not_found.len() as u32,
+            average_confidence: result.average_confidence,
+            providers_used: result.data_quality_summary.total_providers_used,
         });
 
+        let validation_duration = start_time.elapsed();
+
         log_info!(
-            "Enhanced validation completed: {} found (avg quality: {:.2}), {} already exist, {} not found. Using comprehensive provider data.",
+            "Enhanced validation completed: {} found (avg quality: {:.2}), {} already exist, {} not found. Duration: {}ms. Using comprehensive provider data.",
             result.found.len(),
             if !result.found.is_empty() {
                 result.found.iter().map(|v| (v.data_quality.completeness_score + v.data_quality.consistency_score + v.data_quality.freshness_score + v.data_quality.source_reliability) / 4.0).sum::<f32>() / result.found.len() as f32
@@ -112,15 +129,25 @@ impl ImportCoordinator {
                 0.0
             } as f64,
             result.already_exists.len(),
-            result.not_found.len()
+            result.not_found.len(),
+            validation_duration.as_millis()
         );
 
-        Ok(result)
+        Ok(EnhancedValidationResult {
+            found: result.found,
+            not_found: result.not_found,
+            already_exists: result.already_exists,
+            total: result.total,
+            average_confidence: result.average_confidence,
+            data_quality_summary: result.data_quality_summary,
+            validation_duration_ms: validation_duration.as_millis() as u64,
+        })
     }
 
     /// Optimized validation using new components with existing logic
     pub async fn validate_anime_titles(&self, titles: Vec<String>) -> AppResult<ValidationResult> {
         let _timer = TimedOperation::new("validate_anime_titles");
+        let start_time = std::time::Instant::now();
         let total_titles = titles.len();
 
         log_info!("Starting validation for {} titles", total_titles);
@@ -139,11 +166,15 @@ impl ImportCoordinator {
         progress_tracker.emit_validation_progress(ValidationProgress {
             current: 0,
             total: total_titles as u32,
+            percentage: 0.0,
             current_title: "Starting validation...".to_string(),
+            status: "starting".to_string(),
             processed: 0,
             found_count: 0,
             existing_count: 0,
             failed_count: 0,
+            average_confidence: 0.0,
+            providers_used: 0,
         });
 
         // Small delay to ensure frontend receives initial event
@@ -169,34 +200,51 @@ impl ImportCoordinator {
                 processed == total_titles, // is_final
             ) {
                 events_emitted += 1;
+                let percentage = if total_titles > 0 {
+                    (processed as f32 / total_titles as f32) * 100.0
+                } else {
+                    100.0
+                };
                 progress_tracker.emit_validation_progress(ValidationProgress {
                     current: processed as u32,
                     total: total_titles as u32,
+                    percentage,
                     current_title: if processed < total_titles {
                         format!("Processing... ({}/{})", processed, total_titles)
                     } else {
                         "Validation completed".to_string()
                     },
+                    status: if processed == total_titles {
+                        "completed".to_string()
+                    } else {
+                        "processing".to_string()
+                    },
                     processed: processed as u32,
                     found_count: found.len() as u32,
                     existing_count: already_exists.len() as u32,
                     failed_count: not_found.len() as u32,
+                    average_confidence: if found.len() > 0 { 0.8 } else { 0.0 }, // Basic confidence for legacy validation
+                    providers_used: 1, // Legacy validation uses single provider
                 });
             }
         }
+
+        let validation_duration = start_time.elapsed();
 
         let result = ValidationResult {
             found: found.clone(),
             not_found: not_found.clone(),
             already_exists: already_exists.clone(),
             total: titles.len() as u32,
+            validation_duration_ms: validation_duration.as_millis() as u64,
         };
 
         log_info!(
-            "Validation completed: {} found, {} already exist, {} not found. Events emitted: {} (vs {} items processed - {:.1}% reduction)",
+            "Validation completed: {} found, {} already exist, {} not found. Duration: {}ms. Events emitted: {} (vs {} items processed - {:.1}% reduction)",
             found.len(),
             already_exists.len(),
             not_found.len(),
+            validation_duration.as_millis(),
             events_emitted,
             total_titles,
             if total_titles > 0 {
@@ -215,6 +263,7 @@ impl ImportCoordinator {
         enhanced_validated_anime: Vec<EnhancedValidatedAnime>,
     ) -> AppResult<ImportResult> {
         let _timer = TimedOperation::new("import_enhanced_validated_anime");
+        let start_time = std::time::Instant::now();
         let total_count = enhanced_validated_anime.len();
 
         log_info!(
@@ -340,11 +389,14 @@ impl ImportCoordinator {
             skipped_count: skipped_results.len() as u32,
         });
 
+        let import_duration = start_time.elapsed();
+
         log_info!(
-            "Enhanced import completed: {} imported, {} skipped, {} failed",
+            "Enhanced import completed: {} imported, {} skipped, {} failed. Duration: {}ms",
             imported_results.len(),
             skipped_results.len(),
-            failed_results.len()
+            failed_results.len(),
+            import_duration.as_millis()
         );
 
         Ok(ImportResult {
@@ -352,6 +404,7 @@ impl ImportCoordinator {
             skipped: skipped_results,
             failed: failed_results,
             total: total as u32,
+            duration_ms: import_duration.as_millis() as u64,
         })
     }
 
@@ -361,6 +414,7 @@ impl ImportCoordinator {
         validated_anime: Vec<ValidatedAnime>,
     ) -> AppResult<ImportResult> {
         let _timer = TimedOperation::new("import_validated_anime");
+        let start_time = std::time::Instant::now();
         let total_count = validated_anime.len();
 
         log_info!("Starting validated anime import for {} items", total_count);
@@ -467,11 +521,14 @@ impl ImportCoordinator {
             skipped_count: skipped_results.len() as u32,
         });
 
+        let import_duration = start_time.elapsed();
+
         log_info!(
-            "Import validated anime completed: {} imported, {} skipped, {} failed",
+            "Import validated anime completed: {} imported, {} skipped, {} failed. Duration: {}ms",
             imported_results.len(),
             skipped_results.len(),
-            failed_results.len()
+            failed_results.len(),
+            import_duration.as_millis()
         );
 
         Ok(ImportResult {
@@ -479,6 +536,7 @@ impl ImportCoordinator {
             skipped: skipped_results,
             failed: failed_results,
             total: total as u32,
+            duration_ms: import_duration.as_millis() as u64,
         })
     }
 

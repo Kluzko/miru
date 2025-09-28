@@ -5,7 +5,7 @@ use specta::Type;
 use std::fmt;
 
 /// Supported anime data providers
-#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq, Hash)]
 pub enum AnimeProvider {
     /// Jikan (MyAnimeList API) - Default provider
     #[serde(rename = "jikan")]

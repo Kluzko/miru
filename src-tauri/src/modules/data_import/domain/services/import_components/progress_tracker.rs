@@ -59,7 +59,7 @@ impl ProgressTracker {
 
     pub fn emit_validation_progress(&self, progress: ValidationProgress) -> bool {
         if let Some(ref app) = self.app_handle {
-            match app.emit("validation_progress", &progress) {
+            match app.emit("validation-progress", &progress) {
                 Ok(_) => true,
                 Err(e) => {
                     log_error!("Failed to emit validation progress: {}", e);

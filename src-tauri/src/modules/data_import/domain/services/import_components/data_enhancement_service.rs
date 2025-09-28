@@ -1,5 +1,5 @@
 use crate::modules::anime::AnimeDetailed;
-use crate::modules::provider::ProviderService;
+use crate::modules::provider::application::service::ProviderService;
 use crate::shared::errors::AppResult;
 use chrono::Datelike;
 use std::collections::HashMap;
@@ -45,6 +45,7 @@ impl DataEnhancementService {
         &self,
         anime: &AnimeDetailed,
         quality_metrics: &DataQualityMetrics,
+        skip_provider_fetch: bool,
     ) -> AppResult<EnhancementResult> {
         let mut enhanced_anime = anime.clone();
         let mut improvements_made = Vec::new();
@@ -58,31 +59,29 @@ impl DataEnhancementService {
         // Identify fields that need enhancement based on quality metrics
         let gaps = self.identify_data_gaps(anime, quality_metrics);
 
-        // Try to fill gaps using comprehensive provider data
-        if !gaps.is_empty() {
-            // Search for the same anime across all providers to get more complete data
+        // Simple gap filling approach
+        if !gaps.is_empty() && !skip_provider_fetch {
             let search_query = &anime.title.main;
-            match self
-                .provider_service
-                .search_anime_comprehensive(search_query, 3)
-                .await
+            if let Ok(provider_results) = self.provider_service.search_anime(search_query, 3).await
             {
-                Ok(provider_results) => {
-                    // Find the best match for this anime
-                    if let Some(best_match) = self.find_best_match(anime, &provider_results) {
-                        self.fill_data_gaps(
-                            &mut enhanced_anime,
-                            best_match,
-                            &gaps,
-                            &mut improvements_made,
-                            &mut provider_sources,
-                        );
-                    }
-                }
-                Err(e) => {
-                    log::warn!("Failed to fetch comprehensive data for enhancement: {}", e);
+                if let Some(best_match) = self.find_best_match(anime, &provider_results) {
+                    self.fill_data_gaps(
+                        &mut enhanced_anime,
+                        best_match,
+                        &gaps,
+                        &mut improvements_made,
+                        &mut provider_sources,
+                    );
                 }
             }
+        } else if skip_provider_fetch && !gaps.is_empty() {
+            // When skipping provider fetch, try to enhance using existing anime data
+            log::info!(
+                "Skipping provider fetch for '{}' - using existing comprehensive data",
+                anime.title.main
+            );
+            improvements_made
+                .push("Used existing comprehensive data instead of re-fetching".to_string());
         }
 
         // Calculate new quality score
@@ -105,6 +104,7 @@ impl DataEnhancementService {
     pub async fn enhance_batch(
         &self,
         enhanced_validated_anime: Vec<EnhancedValidatedAnime>,
+        skip_provider_fetch: bool,
     ) -> AppResult<(Vec<EnhancementResult>, BatchQualityInsights)> {
         let mut enhancement_results = Vec::new();
         let mut common_gaps: HashMap<String, u32> = HashMap::new();
@@ -119,7 +119,10 @@ impl DataEnhancementService {
             let quality_metrics = &enhanced_validated.data_quality;
 
             // Enhance individual anime
-            match self.enhance_anime_data(anime, quality_metrics).await {
+            match self
+                .enhance_anime_data(anime, quality_metrics, skip_provider_fetch)
+                .await
+            {
                 Ok(enhancement_result) => {
                     total_quality_before += enhancement_result.quality_score_before;
                     total_quality_after += enhancement_result.quality_score_after;
@@ -244,6 +247,9 @@ impl DataEnhancementService {
         }
         if anime.score.is_none() {
             gaps.push("score".to_string());
+        }
+        if anime.age_restriction.is_none() {
+            gaps.push("age_restriction".to_string());
         }
         if anime.aired.from.is_none() {
             gaps.push("aired_from".to_string());
@@ -378,13 +384,9 @@ impl DataEnhancementService {
                         if !english_title.is_empty() && target.title.english.is_none() {
                             target.title.english = Some(english_title.clone());
                             improvements_made.push("Added English title".to_string());
-                            let external_id = source
-                                .provider_metadata
-                                .external_ids
-                                .get(&source.provider_metadata.primary_provider)
-                                .cloned()
-                                .unwrap_or_default();
-                            provider_sources.insert("title.english".to_string(), external_id);
+                            let provider_name =
+                                format!("{:?}", source.provider_metadata.primary_provider);
+                            provider_sources.insert("title.english".to_string(), provider_name);
                         }
                     }
                 }
@@ -393,13 +395,9 @@ impl DataEnhancementService {
                         if !japanese_title.is_empty() && target.title.japanese.is_none() {
                             target.title.japanese = Some(japanese_title.clone());
                             improvements_made.push("Added Japanese title".to_string());
-                            let external_id = source
-                                .provider_metadata
-                                .external_ids
-                                .get(&source.provider_metadata.primary_provider)
-                                .cloned()
-                                .unwrap_or_default();
-                            provider_sources.insert("title.japanese".to_string(), external_id);
+                            let provider_name =
+                                format!("{:?}", source.provider_metadata.primary_provider);
+                            provider_sources.insert("title.japanese".to_string(), provider_name);
                         }
                     }
                 }
@@ -414,13 +412,9 @@ impl DataEnhancementService {
                         {
                             target.synopsis = Some(synopsis.clone());
                             improvements_made.push("Enhanced synopsis".to_string());
-                            let external_id = source
-                                .provider_metadata
-                                .external_ids
-                                .get(&source.provider_metadata.primary_provider)
-                                .cloned()
-                                .unwrap_or_default();
-                            provider_sources.insert("synopsis".to_string(), external_id);
+                            let provider_name =
+                                format!("{:?}", source.provider_metadata.primary_provider);
+                            provider_sources.insert("synopsis".to_string(), provider_name);
                         }
                     }
                 }
@@ -432,69 +426,56 @@ impl DataEnhancementService {
                                 target.genres.push(genre.clone());
                             }
                         }
-                        improvements_made.push(format!(
-                            "Added {} genres",
-                            source.genres.len() - target.genres.len()
-                        ));
-                        let external_id = source
-                            .provider_metadata
-                            .external_ids
-                            .get(&source.provider_metadata.primary_provider)
-                            .cloned()
-                            .unwrap_or_default();
-                        provider_sources.insert("genres".to_string(), external_id);
+                        let added_count = source.genres.len().saturating_sub(target.genres.len());
+                        improvements_made.push(format!("Added {} genres", added_count));
+                        let provider_name =
+                            format!("{:?}", source.provider_metadata.primary_provider);
+                        provider_sources.insert("genres".to_string(), provider_name);
                     }
                 }
                 "studios" => {
                     if !source.studios.is_empty() && target.studios.is_empty() {
                         target.studios = source.studios.clone();
                         improvements_made.push("Added studio information".to_string());
-                        let external_id = source
-                            .provider_metadata
-                            .external_ids
-                            .get(&source.provider_metadata.primary_provider)
-                            .cloned()
-                            .unwrap_or_default();
-                        provider_sources.insert("studios".to_string(), external_id);
+                        let provider_name =
+                            format!("{:?}", source.provider_metadata.primary_provider);
+                        provider_sources.insert("studios".to_string(), provider_name);
                     }
                 }
                 "score" => {
                     if source.score.is_some() && target.score.is_none() {
                         target.score = source.score;
                         improvements_made.push("Added rating score".to_string());
-                        let external_id = source
-                            .provider_metadata
-                            .external_ids
-                            .get(&source.provider_metadata.primary_provider)
-                            .cloned()
-                            .unwrap_or_default();
-                        provider_sources.insert("score".to_string(), external_id);
+                        let provider_name =
+                            format!("{:?}", source.provider_metadata.primary_provider);
+                        provider_sources.insert("score".to_string(), provider_name);
                     }
                 }
                 "aired_from" => {
                     if source.aired.from.is_some() && target.aired.from.is_none() {
                         target.aired.from = source.aired.from;
                         improvements_made.push("Added air date".to_string());
-                        let external_id = source
-                            .provider_metadata
-                            .external_ids
-                            .get(&source.provider_metadata.primary_provider)
-                            .cloned()
-                            .unwrap_or_default();
-                        provider_sources.insert("aired_from".to_string(), external_id);
+                        let provider_name =
+                            format!("{:?}", source.provider_metadata.primary_provider);
+                        provider_sources.insert("aired_from".to_string(), provider_name);
                     }
                 }
                 "images" => {
                     if source.image_url.is_some() && target.image_url.is_none() {
                         target.image_url = source.image_url.clone();
                         improvements_made.push("Added cover images".to_string());
-                        let external_id = source
-                            .provider_metadata
-                            .external_ids
-                            .get(&source.provider_metadata.primary_provider)
-                            .cloned()
-                            .unwrap_or_default();
-                        provider_sources.insert("images".to_string(), external_id);
+                        let provider_name =
+                            format!("{:?}", source.provider_metadata.primary_provider);
+                        provider_sources.insert("images".to_string(), provider_name);
+                    }
+                }
+                "age_restriction" => {
+                    if source.age_restriction.is_some() && target.age_restriction.is_none() {
+                        target.age_restriction = source.age_restriction.clone();
+                        improvements_made.push("Added age restriction rating".to_string());
+                        let provider_name =
+                            format!("{:?}", source.provider_metadata.primary_provider);
+                        provider_sources.insert("age_restriction".to_string(), provider_name);
                     }
                 }
                 _ => {}
@@ -520,7 +501,7 @@ impl DataEnhancementService {
 
     fn calculate_completeness_score(&self, anime: &AnimeDetailed) -> f32 {
         let mut filled_fields = 0;
-        let total_fields = 10; // Total important fields we track
+        let total_fields = 11; // Updated to include age_restriction
 
         // Core fields
         if !anime.title.main.is_empty() {
@@ -545,6 +526,9 @@ impl DataEnhancementService {
             filled_fields += 1;
         }
         if anime.aired.from.is_some() {
+            filled_fields += 1;
+        }
+        if anime.age_restriction.is_some() {
             filled_fields += 1;
         }
         if anime.image_url.is_some() {

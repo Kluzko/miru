@@ -20,6 +20,7 @@ interface EnhancedImportMetrics {
   averageQualityScore: number;
   providersUsed: string[];
   gapsFilledCount: number;
+  importDurationMs: number;
 }
 
 export function useImportExecution() {
@@ -78,6 +79,7 @@ export function useImportExecution() {
 
     try {
       let allAnimeIds: string[] = [];
+      let importDuration = 0;
 
       // Step 1: Import new anime using already validated data (NO re-validation!)
       if (hasNewAnime) {
@@ -101,6 +103,9 @@ export function useImportExecution() {
           const newImportedIds = importResult.imported.map((anime) => anime.id);
           allAnimeIds = [...allAnimeIds, ...newImportedIds];
 
+          // Get import duration from backend result
+          importDuration = importResult.duration_ms || 0;
+
           // Calculate metrics from the validation result we already have
           const totalConfidence = validationResult.found.reduce(
             (sum, anime) => sum + anime.confidence_score,
@@ -119,6 +124,7 @@ export function useImportExecution() {
               `${validationResult.data_quality_summary.total_providers_used} providers`,
             ],
             gapsFilledCount: 0, // No gaps filled since we're using pre-validated data
+            importDurationMs: importDuration,
           };
           setEnhancedMetrics(metrics);
 

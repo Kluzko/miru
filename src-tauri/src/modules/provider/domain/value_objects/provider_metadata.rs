@@ -4,7 +4,7 @@ use specta::Type;
 use std::collections::HashMap;
 
 /// Provider-specific metadata for external IDs and synchronization
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 pub struct ProviderMetadata {
     /// External IDs from different providers
     pub external_ids: HashMap<AnimeProvider, String>,
@@ -35,6 +35,11 @@ impl ProviderMetadata {
     /// Get external ID for specific provider
     pub fn get_external_id(&self, provider: &AnimeProvider) -> Option<&String> {
         self.external_ids.get(provider)
+    }
+
+    /// Add external ID for specific provider
+    pub fn add_external_id(&mut self, provider: AnimeProvider, id: String) {
+        self.external_ids.insert(provider, id);
     }
 
     /// Get URL for specific provider

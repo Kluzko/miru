@@ -26,6 +26,10 @@ impl AnimeStatus {
             AnimeStatus::Unknown => "Unknown",
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        matches!(self, AnimeStatus::Unknown)
+    }
 }
 
 impl fmt::Display for AnimeStatus {

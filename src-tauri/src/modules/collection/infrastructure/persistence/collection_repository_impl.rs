@@ -73,8 +73,10 @@ impl CollectionRepositoryImpl {
             title,
             provider_metadata,
             score: model.score,
+            rating: model.score, // Alias for score
             favorites: model.favorites.map(|v| v as u32),
-            synopsis: model.synopsis,
+            synopsis: model.synopsis.clone(),
+            description: model.synopsis, // Alias for synopsis
             episodes: model.episodes.map(|v| v as u16),
             status: model.status,
             aired: AiredDates {
@@ -87,7 +89,8 @@ impl CollectionRepositoryImpl {
             studios,
             source: model.source,
             duration: model.duration,
-            image_url: model.image_url,
+            image_url: model.image_url.clone(),
+            images: model.image_url, // Alias for image_url
             banner_image: model.banner_image,
             trailer_url: model.trailer_url,
             composite_score: model.composite_score,

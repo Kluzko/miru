@@ -51,6 +51,8 @@ interface QualityMetrics {
   providersUsed: string[];
   enhancementOpportunities: number;
   dataQualityScore: number;
+  validationDurationMs?: number;
+  importDurationMs?: number;
 }
 
 export function useImportValidation() {
@@ -170,6 +172,7 @@ export function useImportValidation() {
             enhancedData.data_quality_summary.fields_with_gaps.length || 0,
           dataQualityScore:
             enhancedData.data_quality_summary.average_completeness || 0,
+          validationDurationMs: enhancedData.validation_duration_ms,
         };
         setQualityMetrics(metrics);
 

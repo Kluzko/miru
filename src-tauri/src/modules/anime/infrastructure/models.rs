@@ -1,5 +1,6 @@
-use crate::modules::anime::{AnimeStatus, AnimeTier, AnimeType, UnifiedAgeRestriction};
+use crate::modules::anime::{AnimeStatus, AnimeTier, AnimeType};
 use crate::schema::{anime, anime_genres, anime_studios, genres, quality_metrics, studios};
+use crate::shared::domain::value_objects::UnifiedAgeRestriction;
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};

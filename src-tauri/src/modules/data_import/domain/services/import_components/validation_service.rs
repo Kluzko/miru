@@ -1,4 +1,5 @@
 use crate::modules::anime::AnimeRepository;
+use crate::modules::provider::application::service::ProviderService;
 use crate::shared::errors::{AppError, AppResult};
 use crate::shared::utils::logger::{LogContext, TimedOperation};
 use crate::{log_info, log_warn};
@@ -11,7 +12,6 @@ use super::types::{
     DataQualityMetrics, DataQualitySummary, EnhancedValidatedAnime, EnhancedValidationResult,
     ExistingAnime, ImportError, ValidatedAnime,
 };
-use crate::modules::provider::ProviderService;
 
 /// Progress event structure for real-time validation updates
 #[derive(Clone, serde::Serialize)]
@@ -79,11 +79,7 @@ impl ValidationService {
         &self,
         query: &str,
     ) -> AppResult<Vec<crate::modules::anime::AnimeDetailed>> {
-        match self
-            .provider_service
-            .search_anime_comprehensive(query, 1)
-            .await
-        {
+        match self.provider_service.search_anime(query, 1).await {
             Ok(results) if !results.is_empty() => {
                 LogContext::search_operation(query, Some("provider_service"), Some(results.len()));
                 Ok(results)
@@ -236,8 +232,35 @@ impl ValidationService {
         match self.search_anime_multi_provider(title).await {
             Ok(anime_list) if !anime_list.is_empty() => {
                 let anime = anime_list.into_iter().next().unwrap();
+                let (external_id, provider) = Self::get_primary_external_info(&anime);
 
-                // STEP 3: Analyze data quality and generate comprehensive metrics
+                // STEP 3: Re-check external ID to avoid duplicates (critical fix)
+                if Self::is_valid_external_id(&external_id) {
+                    match self
+                        .anime_repo
+                        .find_by_external_id(&provider, &external_id)
+                        .await
+                    {
+                        Ok(Some(existing)) => {
+                            item_timer.finish();
+                            return EnhancedValidationSingleResult::AlreadyExists(ExistingAnime {
+                                input_title: title.to_string(),
+                                matched_title: existing.title.main.clone(),
+                                matched_field: format!("{:?}_id", provider),
+                                anime: existing,
+                            });
+                        }
+                        Ok(None) => {
+                            // Continue to quality analysis
+                        }
+                        Err(e) => {
+                            log_warn!("External ID lookup failed for '{}': {}", title, e);
+                            // Continue to quality analysis as fallback
+                        }
+                    }
+                }
+
+                // STEP 4: Analyze data quality and generate comprehensive metrics
                 let data_quality = self.analyze_anime_data_quality(&anime).await;
                 let confidence_score = self.calculate_confidence_score(&anime, &data_quality);
                 let provider_sources = self.extract_provider_sources(&anime);
@@ -552,6 +575,7 @@ impl ValidationService {
         app: Option<AppHandle>,
     ) -> AppResult<EnhancedValidationResult> {
         let _timer = TimedOperation::new("validate_titles_enhanced");
+        let start_time = std::time::Instant::now();
         let total_titles = titles.len();
 
         log_info!(
@@ -741,13 +765,16 @@ impl ValidationService {
             );
         }
 
+        let validation_duration = start_time.elapsed();
+
         log_info!(
-            "FINAL VALIDATION SUMMARY: Input={} -> Found={} new, Existing={}, Failed={}, Total processed={}",
+            "FINAL VALIDATION SUMMARY: Input={} -> Found={} new, Existing={}, Failed={}, Total processed={}, Duration={}ms",
             total_titles,
             found.len(),
             already_exists.len(),
             not_found.len(),
-            actual_total
+            actual_total,
+            validation_duration.as_millis()
         );
 
         Ok(EnhancedValidationResult {
@@ -757,7 +784,18 @@ impl ValidationService {
             total: actual_total, // Use actual processed count, not input count
             average_confidence,
             data_quality_summary,
+            validation_duration_ms: validation_duration.as_millis() as u64,
         })
+    }
+
+    /// Validate titles using enhanced processing
+    pub async fn validate_titles_concurrent(
+        &self,
+        titles: Vec<String>,
+        app: Option<AppHandle>,
+    ) -> AppResult<EnhancedValidationResult> {
+        // Use enhanced validation as the main implementation
+        self.validate_titles_enhanced(titles, app).await
     }
 
     /// Identify commonly missing fields across validated anime
@@ -779,6 +817,58 @@ impl ValidationService {
             .filter(|(_, missing_count)| *missing_count as f32 / total_count as f32 > 0.3)
             .map(|(field, _)| field)
             .collect()
+    }
+
+    /// Calculate data quality summary from validation results
+    fn calculate_data_quality_summary(
+        &self,
+        found: &[EnhancedValidatedAnime],
+    ) -> DataQualitySummary {
+        if found.is_empty() {
+            return DataQualitySummary {
+                average_completeness: 0.0,
+                average_consistency: 0.0,
+                total_providers_used: 0,
+                most_reliable_provider: None,
+                fields_with_gaps: Vec::new(),
+            };
+        }
+
+        let total_completeness: f32 = found
+            .iter()
+            .map(|anime| anime.data_quality.completeness_score)
+            .sum();
+        let total_consistency: f32 = found
+            .iter()
+            .map(|anime| anime.data_quality.consistency_score)
+            .sum();
+
+        let average_completeness = total_completeness / found.len() as f32;
+        let average_consistency = total_consistency / found.len() as f32;
+
+        // Get all providers used
+        let mut all_providers_used = std::collections::HashSet::new();
+        for anime in found {
+            for provider in &anime.provider_sources {
+                all_providers_used.insert(provider.clone());
+            }
+        }
+
+        // Find most reliable provider (one with highest average quality)
+        let most_reliable_provider =
+            if all_providers_used.contains(&crate::modules::provider::AnimeProvider::Jikan) {
+                Some(crate::modules::provider::AnimeProvider::Jikan)
+            } else {
+                all_providers_used.iter().next().cloned()
+            };
+
+        DataQualitySummary {
+            average_completeness,
+            average_consistency,
+            total_providers_used: all_providers_used.len() as u32,
+            most_reliable_provider,
+            fields_with_gaps: self.identify_common_gaps(found),
+        }
     }
 }
 
