@@ -129,8 +129,9 @@ impl AniListMapper {
             .unwrap_or_default()
     }
 
-    /// Extract studios from studio connection (main studios only)
+    /// Extract studios from studio connection
     /// Handles both nodes (search queries) and edges (detail queries) structures
+    /// Prioritizes main studios but includes all if no main studios are marked
     fn extract_studios(studios: &Option<StudioConnection>) -> Vec<String> {
         let connection = match studios.as_ref() {
             Some(conn) => conn,
@@ -139,9 +140,22 @@ impl AniListMapper {
 
         // Try edges first (detail queries with isMain on edge)
         if let Some(edges) = &connection.edges {
+            // First try to get only main studios
+            let main_studios: Vec<String> = edges
+                .iter()
+                .filter(|edge| edge.is_main.unwrap_or(false))
+                .filter_map(|edge| edge.node.as_ref())
+                .filter_map(|studio| studio.name.clone())
+                .collect();
+
+            // If we found main studios, return them
+            if !main_studios.is_empty() {
+                return main_studios;
+            }
+
+            // Otherwise, return all studios (fallback when isMain is not set)
             return edges
                 .iter()
-                .filter(|edge| edge.is_main.unwrap_or(false)) // Only main studios
                 .filter_map(|edge| edge.node.as_ref())
                 .filter_map(|studio| studio.name.clone())
                 .collect();
@@ -149,9 +163,21 @@ impl AniListMapper {
 
         // Fallback to nodes (search queries with isMain on node)
         if let Some(nodes) = &connection.nodes {
+            // First try to get only main studios
+            let main_studios: Vec<String> = nodes
+                .iter()
+                .filter(|studio| studio.is_main.unwrap_or(false))
+                .filter_map(|studio| studio.name.clone())
+                .collect();
+
+            // If we found main studios, return them
+            if !main_studios.is_empty() {
+                return main_studios;
+            }
+
+            // Otherwise, return all studios (fallback when isMain is not set)
             return nodes
                 .iter()
-                .filter(|studio| studio.is_main.unwrap_or(false)) // Only main studios
                 .filter_map(|studio| studio.name.clone())
                 .collect();
         }
