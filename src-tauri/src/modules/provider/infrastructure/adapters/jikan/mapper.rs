@@ -11,13 +11,51 @@ use crate::modules::provider::domain::{
     value_objects::provider_metadata::ProviderMetadata,
     AnimeProvider,
 };
-use crate::modules::provider::infrastructure::adapters::mapper::{
-    AdapterCapabilities, AnimeMapper,
-};
+
 use crate::shared::domain::value_objects::UnifiedAgeRestriction;
 use crate::shared::errors::AppError;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
+
+/// Main mapper trait for converting provider-specific data to domain AnimeData
+pub trait AnimeMapper<T> {
+    /// Map provider data to domain AnimeData
+    fn map_to_anime_data(&self, source: T) -> Result<AnimeData, AppError>;
+
+    /// Map a list of provider data to domain AnimeData
+    fn map_to_anime_data_list(&self, sources: Vec<T>) -> Result<Vec<AnimeData>, AppError> {
+        sources
+            .into_iter()
+            .map(|source| self.map_to_anime_data(source))
+            .collect()
+    }
+}
+
+/// Capability trait to describe what each adapter can provide
+pub trait AdapterCapabilities {
+    /// Get the name of the adapter
+    fn name(&self) -> &'static str;
+
+    /// Get the provider fields this adapter can populate
+    fn supported_fields(&self) -> Vec<&'static str>;
+
+    /// Get the provider fields this adapter cannot populate
+    fn unsupported_fields(&self) -> Vec<&'static str>;
+
+    /// Check if the adapter supports a specific field
+    fn supports_field(&self, field: &str) -> bool {
+        self.supported_fields().contains(&field)
+    }
+
+    /// Get quality score for this adapter (0.0 to 1.0)
+    fn quality_score(&self) -> f64;
+
+    /// Get response time estimate in milliseconds
+    fn estimated_response_time(&self) -> u64;
+
+    /// Check if the adapter has rate limiting
+    fn has_rate_limiting(&self) -> bool;
+}
 
 /// Jikan (MyAnimeList) specific mapper implementation
 #[derive(Debug, Clone)]
@@ -222,8 +260,8 @@ impl AnimeMapper<Anime> for JikanMapper {
                 synonyms: source.title_synonyms.unwrap_or_default(),
             },
             provider_metadata,
-            score: source.score,
-            rating: source.score,
+            score: source.score.map(|s| (s * 100.0).round() / 100.0), // Round to 2 decimal places
+            rating: source.score.map(|s| (s * 100.0).round() / 100.0), // Round to 2 decimal places
             favorites: source.favorites.map(|f| f as u32),
             synopsis: source.synopsis.clone(),
             description: source.synopsis,
@@ -251,7 +289,10 @@ impl AnimeMapper<Anime> for JikanMapper {
             images: Self::extract_image_url(&source.images),
             banner_image: None, // Jikan doesn't provide banner images
             trailer_url: Self::extract_trailer_url(&source.trailer),
-            composite_score: source.score.unwrap_or(0.0),
+            composite_score: source
+                .score
+                .map(|s| (s * 100.0).round() / 100.0)
+                .unwrap_or(0.0), // Round to 2 decimal places
             tier: AnimeTier::default(),
             quality_metrics: QualityMetrics::default(),
             created_at: now,
@@ -350,3 +391,5 @@ impl Default for JikanMapper {
         Self::new()
     }
 }
+
+impl JikanMapper {}

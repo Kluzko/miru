@@ -9,6 +9,7 @@ use std::time::Duration;
 pub type DbPool = Pool<ConnectionManager<PgConnection>>;
 pub type DbConnection = r2d2::PooledConnection<ConnectionManager<PgConnection>>;
 
+#[derive(Debug)]
 pub struct Database {
     pool: DbPool,
 }

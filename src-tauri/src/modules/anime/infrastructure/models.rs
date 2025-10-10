@@ -1,5 +1,9 @@
-use crate::modules::anime::{AnimeStatus, AnimeTier, AnimeType};
-use crate::schema::{anime, anime_genres, anime_studios, genres, quality_metrics, studios};
+use crate::modules::anime::domain::value_objects::{
+    AnimeRelationType, AnimeStatus, AnimeTier, AnimeType,
+};
+use crate::schema::{
+    anime, anime_genres, anime_relations, anime_studios, genres, quality_metrics, studios,
+};
 use crate::shared::domain::value_objects::UnifiedAgeRestriction;
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
@@ -229,6 +233,30 @@ pub struct QualityMetricsModel {
     pub consistency_score: f32,
     pub audience_reach_score: f32,
     pub updated_at: DateTime<Utc>,
+}
+
+// ================== ANIME RELATIONS MODELS ==================
+
+#[derive(Queryable, Identifiable, Associations, Debug, Clone)]
+#[diesel(belongs_to(Anime, foreign_key = anime_id))]
+#[diesel(table_name = anime_relations)]
+pub struct AnimeRelation {
+    pub id: Uuid,
+    pub anime_id: Uuid,
+    pub related_anime_id: Uuid,
+    pub relation_type: AnimeRelationType,
+    pub created_at: Option<DateTime<Utc>>,
+    pub synced_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = anime_relations)]
+pub struct NewAnimeRelation {
+    pub id: Uuid,
+    pub anime_id: Uuid,
+    pub related_anime_id: Uuid,
+    pub relation_type: AnimeRelationType,
+    pub synced_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Insertable, Debug, Clone)]

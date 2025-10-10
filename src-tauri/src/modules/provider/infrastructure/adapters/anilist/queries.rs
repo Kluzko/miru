@@ -47,10 +47,12 @@ query ($id: Int, $idMal: Int) {
     popularity
     favourites
     studios {
-      nodes {
-        id
-        name
+      edges {
         isMain
+        node {
+          id
+          name
+        }
       }
     }
     tags {
@@ -149,7 +151,6 @@ query ($search: String, $page: Int, $perPage: Int) {
         nodes {
           id
           name
-          isMain
         }
       }
       isAdult
@@ -356,7 +357,6 @@ query ($page: Int, $perPage: Int, $season: MediaSeason, $seasonYear: Int, $sort:
       studios {
         nodes {
           name
-          isMain
         }
       }
       nextAiringEpisode {
@@ -413,7 +413,6 @@ query ($page: Int, $perPage: Int) {
       studios {
         nodes {
           name
-          isMain
         }
       }
       nextAiringEpisode {
@@ -464,7 +463,6 @@ query ($page: Int, $perPage: Int, $airingAt_greater: Int, $airingAt_lesser: Int)
         studios {
           nodes {
             name
-            isMain
           }
         }
         isAdult
@@ -597,6 +595,152 @@ query ($id: Int) {
     favourites
     popularity
     trending
+  }
+}
+"#;
+
+/// Complete franchise discovery query - fetches entire franchise in single request
+/// Uses 4 levels of nesting to capture most anime franchises completely
+pub const ANIME_FRANCHISE_DISCOVERY_QUERY: &str = r#"
+query ($id: Int) {
+  Media(id: $id, type: ANIME) {
+    id
+    idMal
+    title {
+      romaji
+      english
+      native
+    }
+    type
+    format
+    status
+    episodes
+    startDate {
+      year
+      month
+      day
+    }
+    endDate {
+      year
+      month
+      day
+    }
+    relations {
+      edges {
+        id
+        relationType
+        node {
+          id
+          idMal
+          title {
+            romaji
+            english
+            native
+          }
+          type
+          format
+          status
+          episodes
+          startDate {
+            year
+            month
+            day
+          }
+          endDate {
+            year
+            month
+            day
+          }
+          relations {
+            edges {
+              id
+              relationType
+              node {
+                id
+                idMal
+                title {
+                  romaji
+                  english
+                  native
+                }
+                type
+                format
+                status
+                episodes
+                startDate {
+                  year
+                  month
+                  day
+                }
+                endDate {
+                  year
+                  month
+                  day
+                }
+                relations {
+                  edges {
+                    id
+                    relationType
+                    node {
+                      id
+                      idMal
+                      title {
+                        romaji
+                        english
+                        native
+                      }
+                      type
+                      format
+                      status
+                      episodes
+                      startDate {
+                        year
+                        month
+                        day
+                      }
+                      endDate {
+                        year
+                        month
+                        day
+                      }
+                      relations {
+                        edges {
+                          id
+                          relationType
+                          node {
+                            id
+                            idMal
+                            title {
+                              romaji
+                              english
+                              native
+                            }
+                            type
+                            format
+                            status
+                            episodes
+                            startDate {
+                              year
+                              month
+                              day
+                            }
+                            endDate {
+                              year
+                              month
+                              day
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }
 "#;

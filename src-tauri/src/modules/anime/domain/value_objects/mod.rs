@@ -1,11 +1,13 @@
 //! Anime-specific value objects
 
+pub mod anime_relation_type;
 pub mod anime_status;
 pub mod anime_tier;
 pub mod anime_title;
 pub mod anime_type;
 pub mod quality_metrics;
 
+pub use anime_relation_type::AnimeRelationType;
 pub use anime_status::AnimeStatus;
 pub use anime_tier::AnimeTier;
 pub use anime_title::AnimeTitle;

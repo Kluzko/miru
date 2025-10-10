@@ -15,17 +15,20 @@ use crate::modules::anime::domain::{
         anime_detailed::{AiredDates, AnimeDetailed},
         genre::Genre,
     },
-    repositories::anime_repository::AnimeRepository,
-    value_objects::{anime_title::AnimeTitle, quality_metrics::QualityMetrics},
+    repositories::anime_repository::{AnimeRepository, AnimeWithRelationMetadata},
+    value_objects::{anime_title::AnimeTitle, quality_metrics::QualityMetrics, AnimeRelationType},
 };
 use crate::modules::anime::infrastructure::models::*;
 use crate::modules::provider::{AnimeProvider, ProviderMetadata};
-use crate::schema::{anime, anime_genres, anime_studios, genres, quality_metrics, studios};
+use crate::schema::{
+    anime, anime_genres, anime_relations, anime_studios, genres, quality_metrics, studios,
+};
 use crate::shared::Database;
 use crate::shared::{
     errors::{AppError, AppResult},
     utils::Validator,
 };
+// JsonValue import removed - no longer needed with simplified relations approach
 
 pub struct AnimeRepositoryImpl {
     db: Arc<Database>,
@@ -95,6 +98,85 @@ impl AnimeRepositoryImpl {
             quality_metrics: quality_metrics.unwrap_or_default(),
             // episodes_list: Vec::new(), // Removed - field deleted
             // relations: Vec::new(),     // Removed - field deleted
+            created_at: model.created_at,
+            updated_at: model.updated_at,
+            last_synced_at: model.last_synced_at,
+        }
+    }
+
+    // Helper: Convert database model to entity with proper external IDs
+    fn model_to_entity_with_external_ids(
+        model: Anime,
+        genres: Vec<Genre>,
+        studios: Vec<String>,
+        quality_metrics: Option<QualityMetrics>,
+        external_ids: HashMap<AnimeProvider, String>,
+    ) -> AnimeDetailed {
+        // Create AnimeTitle from database fields
+        let mut title = AnimeTitle::with_variants(
+            model.title_main,
+            model.title_english,
+            model.title_japanese,
+            model.title_romaji,
+        );
+
+        // Set native title and synonyms
+        title.native = model.title_native;
+        title.synonyms = model
+            .title_synonyms
+            .and_then(|v| serde_json::from_value::<Vec<String>>(v).ok())
+            .unwrap_or_default();
+
+        // Create ProviderMetadata with actual external IDs
+        let provider_metadata = if external_ids.is_empty() {
+            // Fallback to default if no external IDs found
+            ProviderMetadata::new(AnimeProvider::Jikan, "0".to_string())
+        } else {
+            // Use the first available provider as primary, preferring AniList
+            let (primary_provider, primary_id) =
+                if let Some(anilist_id) = external_ids.get(&AnimeProvider::AniList) {
+                    (AnimeProvider::AniList, anilist_id.clone())
+                } else if let Some(jikan_id) = external_ids.get(&AnimeProvider::Jikan) {
+                    (AnimeProvider::Jikan, jikan_id.clone())
+                } else {
+                    // Use the first available provider
+                    let (provider, id) = external_ids.iter().next().unwrap();
+                    (provider.clone(), id.clone())
+                };
+
+            let mut metadata = ProviderMetadata::new(primary_provider, primary_id);
+            metadata.external_ids = external_ids;
+            metadata
+        };
+
+        AnimeDetailed {
+            id: model.id,
+            title,
+            provider_metadata,
+            score: model.score,
+            rating: model.score, // Alias for score
+            favorites: model.favorites.map(|v| v as u32),
+            synopsis: model.synopsis.clone(),
+            description: model.synopsis, // Alias for synopsis
+            episodes: model.episodes.map(|v| v as u16),
+            status: model.status,
+            aired: AiredDates {
+                from: model.aired_from,
+                to: model.aired_to,
+            },
+            anime_type: model.anime_type,
+            age_restriction: model.age_restriction,
+            genres,
+            studios,
+            source: model.source,
+            duration: model.duration,
+            image_url: model.image_url.clone(),
+            images: model.image_url, // Alias for image_url
+            banner_image: model.banner_image,
+            trailer_url: model.trailer_url,
+            composite_score: model.composite_score,
+            tier: model.tier,
+            quality_metrics: quality_metrics.unwrap_or_default(),
             created_at: model.created_at,
             updated_at: model.updated_at,
             last_synced_at: model.last_synced_at,
@@ -703,6 +785,226 @@ impl AnimeRepository for AnimeRepositoryImpl {
 
         self.load_anime_batch_with_relations(models).await
     }
+
+    /// Get relations for an anime from database
+    async fn get_relations(&self, anime_id: &Uuid) -> AppResult<Vec<(Uuid, String)>> {
+        let db = Arc::clone(&self.db);
+        let anime_id = *anime_id;
+
+        task::spawn_blocking(move || -> AppResult<Vec<(Uuid, String)>> {
+            let mut conn = db.get_connection()?;
+
+            let relations: Vec<(Uuid, AnimeRelationType)> = anime_relations::table
+                .filter(anime_relations::anime_id.eq(anime_id))
+                .select((
+                    anime_relations::related_anime_id,
+                    anime_relations::relation_type,
+                ))
+                .load::<(Uuid, AnimeRelationType)>(&mut conn)?;
+
+            // Convert AnimeRelationType to String
+            let converted_relations: Vec<(Uuid, String)> = relations
+                .into_iter()
+                .map(|(uuid, rel_type)| (uuid, rel_type.to_string()))
+                .collect();
+
+            Ok(converted_relations)
+        })
+        .await?
+    }
+
+    /// Save relations for an anime to database
+    async fn save_relations(&self, anime_id: &Uuid, relations: &[(Uuid, String)]) -> AppResult<()> {
+        log_debug!(
+            "Starting save_relations for anime {} with {} relations",
+            anime_id,
+            relations.len()
+        );
+
+        let db = Arc::clone(&self.db);
+        let anime_id = *anime_id;
+        let relations_data = relations.to_vec();
+
+        task::spawn_blocking(move || -> AppResult<()> {
+            let mut conn = db.get_connection()?;
+            log_debug!("Database connection acquired for save_relations");
+
+            conn.transaction::<_, AppError, _>(|conn| {
+                log_debug!(
+                    "Starting transaction for {} relations",
+                    relations_data.len()
+                );
+
+                for (index, (related_id, relation_type)) in relations_data.iter().enumerate() {
+                    log_debug!(
+                        "Processing relation {}/{}: {} -> {} (type: {})",
+                        index + 1,
+                        relations_data.len(),
+                        anime_id,
+                        related_id,
+                        relation_type
+                    );
+
+                    // Verify that the related anime exists
+                    let exists = anime::table
+                        .filter(anime::id.eq(*related_id))
+                        .count()
+                        .get_result::<i64>(conn)?;
+
+                    if exists == 0 {
+                        log_error!(
+                            "Related anime {} does not exist in database for relation {}",
+                            related_id,
+                            relation_type
+                        );
+                        return Err(AppError::InvalidInput(format!(
+                            "Related anime {} does not exist in database",
+                            related_id
+                        )));
+                    }
+
+                    log_debug!(
+                        "Related anime {} exists, proceeding with relation save",
+                        related_id
+                    );
+
+                    // Convert string to enum
+                    let relation_type_enum = match relation_type.to_lowercase().as_str() {
+                        // Semantic franchise categories (preferred - absolute categorization)
+                        "mainstory" => AnimeRelationType::MainStory,
+                        "sidestory" => AnimeRelationType::SideStory,
+                        "movie" | "movies" => AnimeRelationType::Movies,
+                        "ova" | "ovaspecial" => AnimeRelationType::OvaSpecial,
+                        // AniList relation types (legacy - relative relations)
+                        "sequel" => AnimeRelationType::Sequel,
+                        "prequel" => AnimeRelationType::Prequel,
+                        "side_story" => AnimeRelationType::SideStory,
+                        "spin_off" => AnimeRelationType::SpinOff,
+                        "alternative" => AnimeRelationType::Alternative,
+                        "summary" => AnimeRelationType::Summary,
+                        "special" => AnimeRelationType::Special,
+                        "parent_story" => AnimeRelationType::ParentStory,
+                        "full_story" => AnimeRelationType::FullStory,
+                        "same_setting" => AnimeRelationType::SameSetting,
+                        "shared_character" => AnimeRelationType::SharedCharacter,
+                        _ => AnimeRelationType::Other,
+                    };
+
+                    log_debug!(
+                        "Attempting to insert/update relation: {} -> {} ({})",
+                        anime_id,
+                        related_id,
+                        relation_type_enum
+                    );
+
+                    let result = diesel::insert_into(anime_relations::table)
+                        .values((
+                            anime_relations::anime_id.eq(anime_id),
+                            anime_relations::related_anime_id.eq(*related_id),
+                            anime_relations::relation_type.eq(relation_type_enum),
+                            anime_relations::synced_at.eq(Utc::now()),
+                        ))
+                        .on_conflict((
+                            anime_relations::anime_id,
+                            anime_relations::related_anime_id,
+                            anime_relations::relation_type,
+                        ))
+                        .do_update()
+                        .set((
+                            anime_relations::relation_type.eq(relation_type_enum),
+                            anime_relations::synced_at.eq(Utc::now()),
+                        ))
+                        .execute(conn);
+
+                    match result {
+                        Ok(rows_affected) => {
+                            log_debug!(
+                                "Successfully saved relation {}/{}: {} rows affected",
+                                index + 1,
+                                relations_data.len(),
+                                rows_affected
+                            );
+                        }
+                        Err(e) => {
+                            log_error!(
+                                "Failed to save relation {}/{}: {}",
+                                index + 1,
+                                relations_data.len(),
+                                e
+                            );
+                            return Err(AppError::DatabaseError(e.to_string()));
+                        }
+                    }
+                }
+
+                log_debug!(
+                    "Transaction completed successfully for {} relations",
+                    relations_data.len()
+                );
+                Ok(())
+            })
+        })
+        .await?
+    }
+
+    /// Get anime with their relation metadata - simple approach reusing existing methods
+    async fn get_anime_with_relations(
+        &self,
+        anime_id: &Uuid,
+    ) -> AppResult<Vec<AnimeWithRelationMetadata>> {
+        use crate::schema::anime_relations;
+        use diesel::prelude::*;
+
+        log::debug!("Getting anime with relations for anime_id: {}", anime_id);
+
+        // First get the relation metadata (relation_type, synced_at)
+        let db = Arc::clone(&self.db);
+        let anime_id = *anime_id;
+
+        let relation_data: Vec<(Uuid, AnimeRelationType, Option<chrono::DateTime<Utc>>)> =
+            task::spawn_blocking(
+                move || -> AppResult<Vec<(Uuid, AnimeRelationType, Option<chrono::DateTime<Utc>>)>> {
+                    let mut conn = db.get_connection()?;
+                    let results = anime_relations::table
+                        .filter(anime_relations::anime_id.eq(anime_id))
+                        .select((
+                            anime_relations::related_anime_id,
+                            anime_relations::relation_type,
+                            anime_relations::synced_at,
+                        ))
+                        .load::<(Uuid, AnimeRelationType, Option<chrono::DateTime<Utc>>)>(&mut conn)?;
+
+                    Ok(results)
+                },
+            )
+            .await??;
+
+        log::debug!("Found {} relations", relation_data.len());
+
+        // Then fetch each anime individually (reusing existing find_by_id method)
+        let mut anime_with_relations = Vec::new();
+
+        for (related_anime_id, relation_type, synced_at) in relation_data {
+            if let Ok(Some(anime)) = self.find_by_id(&related_anime_id).await {
+                anime_with_relations.push(AnimeWithRelationMetadata {
+                    anime,
+                    relation_type: relation_type.to_string(),
+                    synced_at: synced_at.unwrap_or_else(|| Utc::now()),
+                });
+            } else {
+                log::warn!("Related anime {} not found", related_anime_id);
+            }
+        }
+
+        log::debug!(
+            "Successfully loaded {} anime with relations",
+            anime_with_relations.len()
+        );
+        Ok(anime_with_relations)
+    }
+
+    // Note: enrich_relation method removed - with simplified approach,
+    // all enrichment is done by updating the complete anime record directly using save() method
 }
 
 // -----------------------------------------------------------------------------
@@ -762,6 +1064,37 @@ impl AnimeRepositoryImpl {
                     .load::<QualityMetricsModel>(&mut conn)?;
             let grouped_m = metrics.grouped_by(&anime_models);
 
+            // Load external IDs for all anime
+            use crate::schema::anime_external_ids;
+            let external_ids: Vec<(Uuid, String, String)> = anime_external_ids::table
+                .filter(anime_external_ids::anime_id.eq_any(anime_models.iter().map(|a| a.id)))
+                .select((
+                    anime_external_ids::anime_id,
+                    anime_external_ids::provider_code,
+                    anime_external_ids::external_id,
+                ))
+                .load::<(Uuid, String, String)>(&mut conn)?;
+
+            // Group external IDs by anime ID
+            let external_ids_grouped: HashMap<Uuid, HashMap<AnimeProvider, String>> = {
+                let mut grouped = HashMap::new();
+                for (anime_id, provider_code, external_id) in external_ids {
+                    let provider = match provider_code.as_str() {
+                        "jikan" => AnimeProvider::Jikan,
+                        "anilist" => AnimeProvider::AniList,
+                        "kitsu" => AnimeProvider::Kitsu,
+                        "tmdb" => AnimeProvider::TMDB,
+                        "anidb" => AnimeProvider::AniDB,
+                        _ => continue, // Skip unknown providers
+                    };
+                    grouped
+                        .entry(anime_id)
+                        .or_insert_with(HashMap::new)
+                        .insert(provider, external_id);
+                }
+                grouped
+            };
+
             let out = anime_models
                 .into_iter()
                 .zip(grouped_m)
@@ -778,8 +1111,15 @@ impl AnimeRepositoryImpl {
                             audience_reach_score: qm.audience_reach_score,
                         })
                         .unwrap_or_default();
+                    let external_ids = external_ids_grouped.get(&m.id).cloned().unwrap_or_default();
 
-                    Self::model_to_entity(m, genres, studios, Some(quality_metrics))
+                    Self::model_to_entity_with_external_ids(
+                        m,
+                        genres,
+                        studios,
+                        Some(quality_metrics),
+                        external_ids,
+                    )
                 })
                 .collect::<Vec<_>>();
 

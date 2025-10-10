@@ -1,35 +1,35 @@
-#![recursion_limit = "512"]
-
+pub mod commands;
 pub mod modules;
 mod schema;
 pub mod shared;
 
-// Log macros are exported by the logger module
-
+use commands::get_all_commands;
 use modules::{
-    anime::{commands::*, infrastructure::persistence::AnimeRepositoryImpl, AnimeService},
-    collection::{
-        commands::*, infrastructure::persistence::CollectionRepositoryImpl, CollectionService,
+    anime::{
+        application::service::AnimeService,
+        domain::services::anime_relations_service::{AnimeRelationsService, RelationsCache},
+        infrastructure::persistence::AnimeRepositoryImpl,
+        AnimeRepository,
     },
-    data_import::{commands::*, ImportService},
+    collection::{
+        application::service::CollectionService,
+        infrastructure::persistence::CollectionRepositoryImpl, CollectionRepository,
+    },
+    data_import::application::service::ImportService,
     provider::{
         application::service::ProviderService,
         infrastructure::adapters::{CacheAdapter, ProviderRepositoryAdapter},
     },
 };
-use shared::database::Database;
-// Validation functionality - prepared but not yet integrated
-// use shared::validation::{
-//     validation_chain::ValidationChain,
-//     validation_rules::{ExternalIdValidationRule, ScoreValidationRule, TitleValidationRule},
-// };
-// use shared::utils::logger::{LogContext, TimedOperation};
+use shared::{DatabaseHealthMonitor, DatabaseState};
 use std::sync::Arc;
 use tauri::Manager;
 
 // tauri-specta: generate TS types + typed command client from Rust commands
 use specta_typescript::Typescript;
-use tauri_specta::{collect_commands, Builder as SpectaBuilder};
+use tauri_specta::Builder as SpectaBuilder;
+
+use tauri::async_runtime::{block_on, spawn};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -39,114 +39,88 @@ pub fn run() {
     // Initialize structured logging
     shared::utils::logger::init_logger();
 
-    // 1) Build the specta builder with all commands
-    let specta_builder = SpectaBuilder::<tauri::Wry>::new().commands(collect_commands![
-        // Anime commands
-        search_anime,
-        get_anime_by_id,
-        get_top_anime,
-        get_seasonal_anime,
-        search_anime_external,
-        get_anime_by_external_id,
-        // Collection commands
-        create_collection,
-        get_collection,
-        get_all_collections,
-        update_collection,
-        delete_collection,
-        add_anime_to_collection,
-        remove_anime_from_collection,
-        get_collection_anime,
-        update_anime_in_collection,
-        // Import commands
-        import_anime_batch,
-        validate_anime_titles,
-        import_validated_anime,
-        // Provider commands are not included in specta due to async limitations
-    ]);
+    let specta_builder = SpectaBuilder::<tauri::Wry>::new().commands(get_all_commands());
 
-    // 2) Export bindings in debug builds
     #[cfg(debug_assertions)]
     if let Err(e) = specta_builder.export(Typescript::default(), "../src/types/bindings.ts") {
         eprintln!("Warning: Failed to export TypeScript bindings: {}", e);
         eprintln!("TypeScript types may be out of sync. Consider running cargo build again.");
     }
 
-    // 3) Create the invoke handler BEFORE moving `specta_builder` into the setup closure
-
     tauri::Builder::default()
-        // Tell Tauri how to invoke commands (combines specta handler with provider commands)
-        .invoke_handler(tauri::generate_handler![
-            // Specta-generated commands
-            search_anime,
-            get_anime_by_id,
-            get_top_anime,
-            get_seasonal_anime,
-            search_anime_external,
-            get_anime_by_external_id,
-            create_collection,
-            get_collection,
-            get_all_collections,
-            update_collection,
-            delete_collection,
-            add_anime_to_collection,
-            remove_anime_from_collection,
-            get_collection_anime,
-            update_anime_in_collection,
-            import_anime_batch,
-            validate_anime_titles,
-            import_validated_anime
-        ])
+        // Tell Tauri how to invoke commands from centralized registry
+        .invoke_handler(crate::generate_handler_list!())
         .plugin(tauri_plugin_opener::init())
         .setup(move |app| {
             // If you want typed events, mount specta's event hooks here.
             // `specta_builder` is moved into this closure (no later uses outside).
             specta_builder.mount_events(app);
 
-            // Initialize database with proper error handling
-            let database = match Database::new() {
-                Ok(db) => Arc::new(db),
-                Err(e) => {
-                    eprintln!("Failed to initialize database connection: {}", e);
-                    eprintln!("Please check your DATABASE_URL environment variable and database connection.");
-                    std::process::exit(1);
-                }
-            };
+            let db_state = DatabaseState::initialize();
+            let health_monitor = DatabaseHealthMonitor::new(db_state);
 
-            // Run migrations with proper error handling
+            // Start background database health monitoring
+            let monitor_state = health_monitor.get_state();
+
+            spawn(async move {
+                health_monitor.start_monitoring().await;
+            });
+
+            // Get database state for both migrations and service initialization
+            let db_state_read = block_on(async {
+                monitor_state.read().await.clone()
+            });
+
+            // Run migrations if database is available, otherwise continue with degraded functionality
             {
                 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
-                const MIGRATIONS: EmbeddedMigrations =
-                    embed_migrations!("migrations");
+                const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 
-                let mut conn = match database.get_connection() {
-                    Ok(conn) => conn,
-                    Err(e) => {
-                        eprintln!("Failed to get database connection for migrations: {}", e);
-                        eprintln!("Database may be unreachable or configuration is incorrect.");
-                        std::process::exit(1);
+                match db_state_read.get_database() {
+                    Ok(database) => {
+                        match database.get_connection() {
+                            Ok(mut conn) => {
+                                if let Err(e) = conn.run_pending_migrations(MIGRATIONS) {
+                                    log::error!("Failed to run database migrations: {}", e);
+                                    log::warn!("Application will continue with limited functionality");
+                                } else {
+                                    log::info!("Database migrations completed successfully");
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Failed to get database connection for migrations: {}", e);
+                                log::warn!("Application will continue with limited functionality");
+                            }
+                        }
                     }
-                };
-
-                if let Err(e) = conn.run_pending_migrations(MIGRATIONS) {
-                    eprintln!("Failed to run database migrations: {}", e);
-                    eprintln!("Database migration failed. Please check database schema and permissions.");
-                    std::process::exit(1);
+                    Err(e) => {
+                        log::error!("Database unavailable during startup: {}", e);
+                        log::warn!("Application will continue with limited functionality - database operations will be retried automatically");
+                    }
                 }
             }
 
-            // Initialize lock-free provider service
             let provider_repo = Arc::new(ProviderRepositoryAdapter::new());
             let cache_repo = Arc::new(CacheAdapter::new());
             let provider_service = Arc::new(ProviderService::new(provider_repo, cache_repo));
 
-            // Initialize repositories
-            let anime_repo: Arc<dyn modules::anime::AnimeRepository> =
-                Arc::new(AnimeRepositoryImpl::new(Arc::clone(&database)));
-            let collection_repo: Arc<dyn modules::collection::CollectionRepository> =
-                Arc::new(CollectionRepositoryImpl::new(Arc::clone(&database)));
 
-            // Initialize services
+
+            // Get database from state for service initialization
+            let database = match db_state_read.get_database() {
+                Ok(db) => Arc::clone(&db),
+                Err(_) => {
+                    log::warn!("Database unavailable during service initialization - using graceful degradation");
+                    // Continue with limited functionality - services will handle unavailable database gracefully
+                    return Ok(());
+                }
+            };
+
+            // Initialize repositories with proper database
+            let anime_repo: Arc<dyn AnimeRepository> = Arc::new(AnimeRepositoryImpl::new(Arc::clone(&database)));
+            let collection_repo: Arc<dyn CollectionRepository> = Arc::new(CollectionRepositoryImpl::new(Arc::clone(&database)));
+
+            // Initialize core services
             let anime_service = Arc::new(AnimeService::new(
                 Arc::clone(&anime_repo),
                 Arc::clone(&provider_service),
@@ -157,14 +131,16 @@ pub fn run() {
                 Arc::clone(&anime_repo),
             ));
 
-            // Create validation chain with rules (prepared but not yet integrated)
-            // let _validation_chain = ValidationChain::new()
-            //     .add_rule(Arc::new(TitleValidationRule))
-            //     .add_rule(Arc::new(ScoreValidationRule))
-            //     .add_rule(Arc::new(ExternalIdValidationRule));
-
             let import_service = Arc::new(ImportService::new(
                 Arc::clone(&anime_repo),
+                Arc::clone(&provider_service),
+            ));
+
+            // Initialize progressive relations service (new architecture)
+            let relations_cache = Arc::new(RelationsCache::new());
+            let anime_relations_service = Arc::new(AnimeRelationsService::new(
+                relations_cache,
+                Some(Arc::clone(&anime_repo)),
                 Arc::clone(&provider_service),
             ));
 
@@ -172,6 +148,7 @@ pub fn run() {
             app.manage(anime_service);
             app.manage(collection_service);
             app.manage(import_service);
+            app.manage(anime_relations_service);
             app.manage(provider_service);
 
             Ok(())

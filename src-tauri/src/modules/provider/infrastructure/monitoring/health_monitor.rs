@@ -14,6 +14,12 @@ pub struct HealthMonitorConfig {
     pub failure_threshold: u32,
     pub recovery_threshold: u32,
     pub health_check_interval: Duration,
+    /// Minimum response time to consider provider as fast (ms)
+    pub fast_response_threshold: Duration,
+    /// Maximum acceptable response time before marking as slow (ms)
+    pub slow_response_threshold: Duration,
+    /// Weight for response time in health calculation (0.0-1.0)
+    pub response_time_weight: f32,
 }
 
 impl Default for HealthMonitorConfig {
@@ -22,6 +28,9 @@ impl Default for HealthMonitorConfig {
             failure_threshold: 5,
             recovery_threshold: 3,
             health_check_interval: Duration::from_secs(60),
+            fast_response_threshold: Duration::from_millis(500),
+            slow_response_threshold: Duration::from_millis(3000),
+            response_time_weight: 0.3,
         }
     }
 }

@@ -161,14 +161,15 @@ pub struct MediaStreamingEpisode {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct StudioConnection {
-    pub edges: Option<Vec<StudioEdge>>,
+    pub nodes: Option<Vec<Studio>>,     // Used in search queries
+    pub edges: Option<Vec<StudioEdge>>, // Used in detail queries
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct StudioEdge {
-    pub node: Option<Studio>,
     pub is_main: Option<bool>,
+    pub node: Option<Studio>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -176,6 +177,7 @@ pub struct StudioEdge {
 pub struct Studio {
     pub id: Option<i32>,
     pub name: Option<String>,
+    pub is_main: Option<bool>, // For search queries with nodes
 }
 
 // Query response structures
@@ -245,12 +247,12 @@ pub struct MediaWithStaff {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StaffConnection {
-    pub nodes: Vec<AniListStaff>,
+    pub edges: Vec<AniListStaff>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterConnection {
-    pub nodes: Vec<AniListCharacter>,
+    pub edges: Vec<AniListCharacter>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -336,7 +338,7 @@ pub struct MediaWithRecommendations {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecommendationConnection {
-    pub nodes: Vec<AniListRecommendation>,
+    pub edges: Vec<AniListRecommendation>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -359,12 +361,13 @@ pub struct MediaWithRelations {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RelationConnection {
-    pub nodes: Vec<AniListRelation>,
+    pub edges: Vec<AniListRelation>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AniListRelation {
     pub id: Option<i32>,
+    #[serde(rename = "relationType")]
     pub relation_type: Option<String>,
     pub node: Option<AniListMedia>,
 }
@@ -469,6 +472,285 @@ impl AniListSearchParams {
 
         serde_json::Value::Object(json)
     }
+}
+
+// Optimized nested relations models for single GraphQL query
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AniListNestedRelationsResponse {
+    #[serde(rename = "Media")]
+    pub media: Option<MediaWithNestedRelations>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MediaWithNestedRelations {
+    pub id: Option<i32>,
+    pub title: Option<MediaTitle>,
+    pub relations: NestedRelationConnection,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NestedRelationConnection {
+    pub edges: Vec<NestedAniListRelation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NestedAniListRelation {
+    pub id: Option<i32>,
+    #[serde(rename = "relationType")]
+    pub relation_type: Option<String>,
+    pub node: Option<MediaWithNestedRelations>,
+}
+
+// Complete franchise discovery models for optimized single GraphQL query
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AniListFranchiseDiscoveryResponse {
+    #[serde(rename = "Media")]
+    pub media: Option<MediaWithFranchiseData>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MediaWithFranchiseData {
+    pub id: Option<i32>,
+    #[serde(rename = "idMal")]
+    pub id_mal: Option<i32>,
+    pub title: Option<MediaTitle>,
+    #[serde(rename = "type")]
+    pub media_type: Option<String>,
+    pub format: Option<String>,
+    pub status: Option<String>,
+    pub episodes: Option<i32>,
+    #[serde(rename = "startDate")]
+    pub start_date: Option<FuzzyDate>,
+    #[serde(rename = "endDate")]
+    pub end_date: Option<FuzzyDate>,
+    pub relations: Option<FranchiseRelationConnection>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FranchiseRelationConnection {
+    pub edges: Vec<FranchiseAniListRelation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FranchiseAniListRelation {
+    pub id: Option<i32>,
+    #[serde(rename = "relationType")]
+    pub relation_type: Option<String>,
+    pub node: Option<MediaWithFranchiseData>,
+}
+
+/// Detailed franchise relation information for testing and verification
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct FranchiseRelation {
+    pub id: u32,
+    pub title: String,
+    pub relation_type: String,
+    pub format: Option<String>,
+    pub status: Option<String>,
+    pub episodes: Option<i32>,
+    pub start_year: Option<i32>,
+}
+
+/// Categorized franchise information organized by content type
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct CategorizedFranchise {
+    pub main_story: Vec<FranchiseRelation>,
+    pub side_stories: Vec<FranchiseRelation>,
+    pub movies: Vec<FranchiseRelation>,
+    pub ovas_specials: Vec<FranchiseRelation>,
+    pub other: Vec<FranchiseRelation>,
+}
+
+impl CategorizedFranchise {
+    pub fn new() -> Self {
+        Self {
+            main_story: Vec::new(),
+            side_stories: Vec::new(),
+            movies: Vec::new(),
+            ovas_specials: Vec::new(),
+            other: Vec::new(),
+        }
+    }
+
+    pub fn total_count(&self) -> usize {
+        self.main_story.len()
+            + self.side_stories.len()
+            + self.movies.len()
+            + self.ovas_specials.len()
+            + self.other.len()
+    }
+
+    pub fn categorize_relation(&mut self, relation: FranchiseRelation) {
+        match self.determine_category(&relation) {
+            FranchiseCategory::MainStory => self.main_story.push(relation),
+            FranchiseCategory::SideStory => self.side_stories.push(relation),
+            FranchiseCategory::Movie => self.movies.push(relation),
+            FranchiseCategory::OvaSpecial => self.ovas_specials.push(relation),
+            FranchiseCategory::Other => self.other.push(relation),
+        }
+    }
+
+    fn determine_category(&self, relation: &FranchiseRelation) -> FranchiseCategory {
+        // Check format first
+        if let Some(format) = &relation.format {
+            match format.to_uppercase().as_str() {
+                "MOVIE" => return FranchiseCategory::Movie,
+                "OVA" | "ONA" => return FranchiseCategory::OvaSpecial,
+                "SPECIAL" => return FranchiseCategory::OvaSpecial,
+                _ => {}
+            }
+        }
+
+        // Check relation type
+        match relation.relation_type.to_lowercase().as_str() {
+            "sequel" | "prequel" | "parent story" | "full story" => FranchiseCategory::MainStory,
+            "side story" | "spin off" | "alternative" | "character" => FranchiseCategory::SideStory,
+            "adaptation" => {
+                // Check if it's main story based on title patterns
+                if Self::is_main_story_by_title(&relation.title) {
+                    FranchiseCategory::MainStory
+                } else {
+                    // For adaptation relations, check if it's TV format (likely main story)
+                    if let Some(format) = &relation.format {
+                        if format.to_uppercase() == "TV" {
+                            FranchiseCategory::MainStory
+                        } else {
+                            FranchiseCategory::Other
+                        }
+                    } else {
+                        FranchiseCategory::Other
+                    }
+                }
+            }
+            "other" | "shared character" => {
+                // Check if it's main story based on title patterns
+                if Self::is_main_story_by_title(&relation.title) {
+                    FranchiseCategory::MainStory
+                } else {
+                    FranchiseCategory::Other
+                }
+            }
+            _ => {
+                // Default: if it's TV format, assume main story
+                if let Some(format) = &relation.format {
+                    if format.to_uppercase() == "TV" {
+                        FranchiseCategory::MainStory
+                    } else {
+                        FranchiseCategory::Other
+                    }
+                } else {
+                    FranchiseCategory::Other
+                }
+            }
+        }
+    }
+
+    /// Determines if a title represents a main story entry based on patterns
+    fn is_main_story_by_title(title: &str) -> bool {
+        let title_lower = title.to_lowercase();
+
+        // Check for explicit season indicators
+        if title_lower.contains("season") {
+            return true;
+        }
+
+        // Check for Roman numerals (I, II, III, IV, V) which usually indicate main story
+        if title.contains(" II")
+            || title.contains(" III")
+            || title.contains(" IV")
+            || title.contains(" V")
+            || title.ends_with(" I")
+        {
+            return true;
+        }
+
+        // Check for numbered seasons patterns
+        if title_lower.contains("2nd")
+            || title_lower.contains("3rd")
+            || title_lower.contains("4th")
+            || title_lower.contains("5th")
+        {
+            return true;
+        }
+
+        // Check for common anime sequel patterns
+        if title_lower.contains("part")
+            || title_lower.contains("cour")
+            || title_lower.contains("final")
+            || title_lower.contains("last")
+        {
+            return true;
+        }
+
+        // Check for numbered series (like "Anime 2", "Anime 3")
+        let words: Vec<&str> = title.split_whitespace().collect();
+        for word in &words {
+            if word.parse::<u32>().is_ok() && word.parse::<u32>().unwrap() > 1 {
+                return true;
+            }
+        }
+
+        // Exclude typical side story indicators
+        if title_lower.contains("gaiden")
+            || title_lower.contains("side")
+            || title_lower.contains("special")
+            || title_lower.contains("ova")
+            || title_lower.contains("omake")
+        {
+            return false;
+        }
+
+        // For DanMachi specifically, check for main story arc patterns
+        if title_lower.contains("dungeon ni deai") {
+            // Main story arcs usually have specific patterns
+            if title_lower.contains("shin shou") || // New Chapter
+               title_lower.contains("familia") ||
+               (title_lower.matches(char::is_numeric).count() > 0 &&
+                !title_lower.contains("onsen") &&
+                !title_lower.contains("orion"))
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub fn sort_all_categories(&mut self) {
+        Self::sort_by_chronology(&mut self.main_story);
+        Self::sort_by_chronology(&mut self.side_stories);
+        Self::sort_by_chronology(&mut self.movies);
+        Self::sort_by_chronology(&mut self.ovas_specials);
+        Self::sort_by_chronology(&mut self.other);
+    }
+
+    fn sort_by_chronology(relations: &mut Vec<FranchiseRelation>) {
+        relations.sort_by(|a, b| {
+            // Primary sort: by year
+            match (a.start_year, b.start_year) {
+                (Some(year_a), Some(year_b)) => {
+                    if year_a != year_b {
+                        return year_a.cmp(&year_b);
+                    }
+                }
+                (Some(_), None) => return std::cmp::Ordering::Less,
+                (None, Some(_)) => return std::cmp::Ordering::Greater,
+                (None, None) => {}
+            }
+
+            // Secondary sort: by title (for same year items)
+            a.title.cmp(&b.title)
+        });
+    }
+}
+
+#[derive(Debug, Clone)]
+enum FranchiseCategory {
+    MainStory,
+    SideStory,
+    Movie,
+    OvaSpecial,
+    Other,
 }
 
 // Type aliases for consistency with adapter

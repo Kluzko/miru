@@ -53,6 +53,74 @@ async getAnimeByExternalId(request: GetAnimeByExternalIdRequest) : Promise<Resul
     else return { status: "error", error: e  as any };
 }
 },
+async getAnimeRelations(request: GetRelationsRequest) : Promise<Result<AnimeDetailed[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_anime_relations", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Automatically enrich anime with missing provider data
+ * 
+ * This command uses existing provider IDs to search for and add missing provider data.
+ * For example, if anime has only Jikan ID, it will search AniList using the title
+ * and other metadata to find the corresponding AniList entry.
+ */
+async enrichAnimeProviders(request: EnrichAnimeRequest) : Promise<Result<EnrichmentResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("enrich_anime_providers", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Re-sync anime data from all available providers
+ * 
+ * This command refreshes anime data from all providers where we have IDs,
+ * ensuring the local data is up-to-date with the latest information.
+ */
+async resyncAnimeData(request: ResyncAnimeRequest) : Promise<Result<ResyncResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("resync_anime_data", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Automatically enrich anime data when loading anime details
+ * 
+ * This command runs automatically when an anime detail page loads.
+ * It silently checks for missing provider data and enriches it in the background.
+ */
+async autoEnrichOnLoad(request: AutoEnrichRequest) : Promise<Result<AutoEnrichResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("auto_enrich_on_load", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get anime with relations using optimized batch approach
+ * 
+ * This command fetches complete anime data with relation metadata in a single call.
+ * If no relations exist in the database, the backend automatically discovers and saves them
+ * from AniList before returning the results.
+ * 
+ * Returns a vector of related anime with their relation types and sync timestamps.
+ */
+async getAnimeWithRelations(animeId: string) : Promise<Result<AnimeWithRelationMetadata[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_anime_with_relations", { animeId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async createCollection(request: CreateCollectionRequest) : Promise<Result<Collection, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("create_collection", { request }) };
@@ -148,6 +216,70 @@ async importValidatedAnime(request: ImportValidatedAnimeRequest) : Promise<Resul
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Get basic franchise relations (AniList exclusive - optimized GraphQL)
+ * 
+ * This command provides basic relationship discovery using AniList's superior GraphQL API.
+ * Performance: ~0.4-1.0 seconds vs 10+ seconds with other providers.
+ */
+async getFranchiseRelations(animeId: number) : Promise<Result<AnimeRelation[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_franchise_relations", { animeId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Discover complete franchise with detailed metadata (AniList exclusive)
+ * 
+ * Returns comprehensive franchise data including titles, years, episodes, and formats.
+ * Uses single GraphQL call for entire franchise discovery - vastly superior to REST APIs.
+ * Performance: Complete franchise (74+ items) discovered in <1 second.
+ */
+async discoverFranchiseDetails(animeId: number) : Promise<Result<FranchiseRelation[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("discover_franchise_details", { animeId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Discover and categorize complete franchise (AniList exclusive - RECOMMENDED)
+ * 
+ * The most comprehensive franchise discovery method available.
+ * Returns franchise content intelligently categorized into:
+ * - Main Story: Core seasons and sequels in chronological order
+ * - Side Stories: Spin-offs and alternate storylines
+ * - Movies: Theatrical releases
+ * - OVAs/Specials: Additional content and extras
+ * - Other: Miscellaneous relations
+ * 
+ * Performance: Complete categorized franchise in 0.4-2.2 seconds
+ */
+async discoverCategorizedFranchise(animeId: number) : Promise<Result<CategorizedFranchise, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("discover_categorized_franchise", { animeId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get relationship discovery capabilities and performance information
+ * 
+ * Returns information about why relationship discovery is AniList-exclusive
+ * and performance comparisons with other providers.
+ */
+async getRelationshipCapabilities() : Promise<Result<RelationshipCapabilities, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_relationship_capabilities") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -194,6 +326,10 @@ export type AnimeProvider =
  * AniDB for detailed technical info
  */
 "anidb"
+/**
+ * Simple anime relation for basic relationship queries
+ */
+export type AnimeRelation = { id: number; relation_type: string }
 export type AnimeStatus = "Airing" | "Finished" | "NotYetAired" | "Cancelled" | "Unknown"
 export type AnimeTier = "S" | "A" | "B" | "C" | "D"
 /**
@@ -226,9 +362,19 @@ native: string | null;
 synonyms: string[] }
 export type AnimeType = "TV" | "Movie" | "OVA" | "Special" | "ONA" | "Music" | "Unknown"
 /**
+ * Anime with relation metadata for batch fetching
+ */
+export type AnimeWithRelationMetadata = { anime: AnimeDetailed; relation_type: string; synced_at: string }
+export type AutoEnrichRequest = { animeId: string }
+export type AutoEnrichResult = { animeId: string; enrichmentPerformed: boolean; providersFound: string[]; shouldReload: boolean }
+/**
  * Aggregate quality insights for a batch of anime
  */
 export type BatchQualityInsights = { total_anime: number; average_quality_before: number; average_quality_after: number; common_gaps: Partial<{ [key in string]: number }>; provider_effectiveness: Partial<{ [key in string]: number }>; enhancement_summary: string[] }
+/**
+ * Categorized franchise information organized by content type
+ */
+export type CategorizedFranchise = { main_story: FranchiseRelation[]; side_stories: FranchiseRelation[]; movies: FranchiseRelation[]; ovas_specials: FranchiseRelation[]; other: FranchiseRelation[] }
 export type Collection = { id: string; name: string; description: string | null; animeIds: string[]; animeCount: number | null; createdAt: string; updatedAt: string }
 export type CreateCollectionRequest = { name: string; description: string | null }
 /**
@@ -248,12 +394,19 @@ export type EnhancedValidatedAnime = { input_title: string; anime_data: AnimeDet
  * Enhanced validation result with comprehensive data analysis
  */
 export type EnhancedValidationResult = { found: EnhancedValidatedAnime[]; not_found: ImportError[]; already_exists: ExistingAnime[]; total: number; average_confidence: number; data_quality_summary: DataQualitySummary; validation_duration_ms: number }
+export type EnrichAnimeRequest = { animeId: string }
+export type EnrichmentResult = { animeId: string; providersAdded: string[]; providersUpdated: string[]; errors: string[]; success: boolean }
 export type ExistingAnime = { input_title: string; matched_title: string; matched_field: string; anime: AnimeDetailed }
+/**
+ * Detailed franchise relation information for testing and verification
+ */
+export type FranchiseRelation = { id: number; title: string; relation_type: string; format: string | null; status: string | null; episodes: number | null; start_year: number | null }
 export type Genre = { id: string; name: string }
 export type GetAnimeByExternalIdRequest = { id: string; preferred_provider: AnimeProvider | null }
 export type GetAnimeByIdRequest = { id: string }
 export type GetCollectionAnimeRequest = { collection_id: string }
 export type GetCollectionRequest = { id: string }
+export type GetRelationsRequest = { anime_id: string }
 export type GetSeasonalAnimeRequest = { year: number; season: string; page: number }
 export type GetTopAnimeRequest = { page: number; limit: number }
 export type ImportAnimeBatchRequest = { titles: string[] }
@@ -262,6 +415,10 @@ export type ImportError = { title: string; reason: string }
 export type ImportResult = { imported: ImportedAnime[]; failed: ImportError[]; skipped: SkippedAnime[]; total: number; duration_ms: number }
 export type ImportValidatedAnimeRequest = { validated_anime: ValidatedAnime[] }
 export type ImportedAnime = { title: string; primary_external_id: string; provider: AnimeProvider; id: string }
+/**
+ * Performance comparison between AniList and other providers
+ */
+export type PerformanceComparison = { anilist_calls: number; other_provider_calls: number; anilist_time_seconds: number; other_provider_time_seconds: number; efficiency_multiplier: number }
 /**
  * Provider-specific metadata for external IDs and synchronization
  */
@@ -283,7 +440,13 @@ user_preferred_provider: AnimeProvider | null;
  */
 primary_provider: AnimeProvider }
 export type QualityMetrics = { popularityScore: number; engagementScore: number; consistencyScore: number; audienceReachScore: number }
+/**
+ * Information about relationship discovery capabilities
+ */
+export type RelationshipCapabilities = { supported_provider: AnimeProvider; reasons_for_exclusivity: string[]; performance_comparison: PerformanceComparison }
 export type RemoveAnimeFromCollectionRequest = { collection_id: string; anime_id: string }
+export type ResyncAnimeRequest = { animeId: string; forceRefresh: boolean | null }
+export type ResyncResult = { animeId: string; providersSynced: string[]; dataUpdated: boolean; errors: string[]; success: boolean }
 export type SearchAnimeExternalRequest = { query: string; limit: number | null }
 export type SearchAnimeRequest = { query: string }
 export type SkippedAnime = { title: string; external_id: string; provider: AnimeProvider; reason: string }

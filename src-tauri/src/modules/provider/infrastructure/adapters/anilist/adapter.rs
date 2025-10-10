@@ -6,12 +6,15 @@
 use async_trait::async_trait;
 use chrono::Datelike;
 use serde_json::{json, Value};
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     modules::provider::{
         domain::entities::anime_data::AnimeData,
         infrastructure::{
-            adapters::{mapper::AnimeMapper, provider_repository_adapter::ProviderAdapter},
+            adapters::{
+                anilist::mapper::AnimeMapper, provider_repository_adapter::ProviderAdapter,
+            },
             http_client::RateLimitClient,
         },
         AnimeProvider,
@@ -56,11 +59,14 @@ impl AniListAdapter {
             body["variables"] = vars;
         }
 
+        log::debug!("AniList: Sending GraphQL request body: {:?}", body);
+
         // Use the modern HTTP client with built-in rate limiting and retry logic
         let graphql_response: Value = self.http_client.post_json(&self.base_url, &body).await?;
 
         // Check for GraphQL errors
         if let Some(errors) = graphql_response.get("errors") {
+            log::error!("AniList: GraphQL errors in response: {:?}", errors);
             return Err(AppError::ApiError(format!(
                 "AniList GraphQL errors: {}",
                 errors
@@ -83,11 +89,12 @@ impl ProviderAdapter for AniListAdapter {
     async fn search_anime(&self, query: &str, limit: usize) -> AppResult<Vec<AnimeData>> {
         let variables = json!({
             "search": query,
-            "perPage": limit,
-            "sort": "POPULARITY_DESC"
+            "page": 1,
+            "perPage": limit
         });
 
         log::info!("AniList: Searching for '{}' (limit: {})", query, limit);
+        log::debug!("AniList: GraphQL variables: {:?}", variables);
 
         let response: AniListSearchResponse = self
             .make_graphql_request(ANIME_SEARCH_QUERY, Some(variables))
@@ -240,10 +247,53 @@ impl ProviderAdapter for AniListAdapter {
     fn can_make_request_now(&self) -> bool {
         self.can_make_request_now()
     }
+
+    async fn get_anime_relations(&self, id: u32) -> AppResult<Vec<(u32, String)>> {
+        // Use the working raw relations approach for now
+        let relations = self.fetch_raw_relations(id, 50).await?;
+
+        let mut simple_relations = Vec::new();
+        for relation in relations {
+            if let Some(node) = relation.node {
+                if let Some(related_id) = node.id {
+                    let relation_type = self.map_anilist_relation_type(&relation.relation_type);
+                    simple_relations.push((related_id as u32, relation_type));
+                }
+            }
+        }
+
+        Ok(simple_relations)
+    }
 }
 
 // Additional AniList-specific functions following the same pattern as Jikan
 impl AniListAdapter {
+    /// Map AniList relation type to standardized string
+    fn map_anilist_relation_type(&self, relation_type: &Option<String>) -> String {
+        match relation_type.as_ref().map(|s| s.as_str()) {
+            Some("SEQUEL") => "Sequel".to_string(),
+            Some("PREQUEL") => "Prequel".to_string(),
+            Some("SIDE_STORY") => "Side Story".to_string(),
+            Some("SPIN_OFF") => "Spin-off".to_string(),
+            Some("ALTERNATIVE") => "Alternative".to_string(),
+            Some("SOURCE") => "Source".to_string(),
+            Some("ADAPTATION") => "Adaptation".to_string(),
+            Some("SUMMARY") => "Summary".to_string(),
+            Some("COMPILATION") => "Summary".to_string(),
+            Some("CONTAINS") => "Parent Story".to_string(),
+            Some("CHARACTER") => "Shared Character".to_string(),
+            Some("FULL_STORY") => "Full Story".to_string(),
+            Some("PARENT") => "Parent Story".to_string(),
+            Some("OTHER") => "Other".to_string(),
+            _ => {
+                log::warn!(
+                    "Unknown AniList relation type: {:?}, defaulting to Other",
+                    relation_type
+                );
+                "Other".to_string()
+            }
+        }
+    }
     // =============================================================================
     // CORE ANIME FUNCTIONS
     // =============================================================================
@@ -303,7 +353,7 @@ impl AniListAdapter {
 
         let characters = response
             .media
-            .map(|m| m.characters.nodes)
+            .map(|m| m.characters.edges)
             .unwrap_or_default();
         log::info!(
             "AniList: Found {} characters for anime ID '{}'",
@@ -326,7 +376,7 @@ impl AniListAdapter {
             .make_graphql_request(ANIME_STAFF_QUERY, Some(variables))
             .await?;
 
-        let staff = response.media.map(|m| m.staff.nodes).unwrap_or_default();
+        let staff = response.media.map(|m| m.staff.edges).unwrap_or_default();
         log::info!(
             "AniList: Found {} staff members for anime ID '{}'",
             staff.len(),
@@ -370,7 +420,7 @@ impl AniListAdapter {
 
         let recommendations = response
             .media
-            .map(|m| m.recommendations.nodes)
+            .map(|m| m.recommendations.edges)
             .unwrap_or_default();
         log::info!(
             "AniList: Found {} recommendations for anime ID '{}'",
@@ -380,8 +430,8 @@ impl AniListAdapter {
         Ok(recommendations)
     }
 
-    /// Get related anime
-    pub async fn get_anime_relations(
+    /// Get related anime (raw AniList data)
+    pub async fn fetch_raw_relations(
         &self,
         id: u32,
         limit: usize,
@@ -399,7 +449,7 @@ impl AniListAdapter {
 
         let relations = response
             .media
-            .map(|m| m.relations.nodes)
+            .map(|m| m.relations.edges)
             .unwrap_or_default();
         log::info!(
             "AniList: Found {} relation groups for anime ID '{}'",
@@ -588,6 +638,260 @@ impl AniListAdapter {
             response.page.media.len()
         );
         Ok(response.page.media)
+    }
+
+    /// Optimized anime relations using complete franchise discovery
+    pub async fn get_anime_relations_optimized(&self, id: u32) -> AppResult<Vec<(u32, String)>> {
+        // Use the new franchise discovery method for better performance
+        self.discover_complete_franchise(id).await
+    }
+
+    /// Complete franchise discovery using deep nested GraphQL query - gets entire franchise in 1 API call
+    pub async fn discover_complete_franchise(&self, id: u32) -> AppResult<Vec<(u32, String)>> {
+        let variables = json!({
+            "id": id
+        });
+
+        log::info!(
+            "AniList: Getting complete franchise for anime ID '{}' using deep nested query",
+            id
+        );
+
+        let response: AniListFranchiseDiscoveryResponse = self
+            .make_graphql_request(ANIME_FRANCHISE_DISCOVERY_QUERY, Some(variables))
+            .await?;
+
+        let mut all_relations = HashMap::new();
+        let mut visited = HashSet::new();
+
+        if let Some(media) = response.media {
+            // Process the complete franchise tree
+            self.process_franchise_relations(&media, &mut all_relations, &mut visited);
+        }
+
+        // Convert to simple tuple format, excluding the starting anime
+        let franchise_relations: Vec<(u32, String)> = all_relations
+            .into_iter()
+            .filter(|(related_id, _)| *related_id != id) // Exclude self-reference
+            .collect();
+
+        log::info!(
+            "AniList: Discovered {} franchise relations using single GraphQL query for ID '{}'",
+            franchise_relations.len(),
+            id
+        );
+
+        Ok(franchise_relations)
+    }
+
+    /// Complete franchise discovery with detailed information including titles
+    pub async fn discover_complete_franchise_with_details(
+        &self,
+        id: u32,
+    ) -> AppResult<Vec<FranchiseRelation>> {
+        let variables = json!({
+            "id": id
+        });
+
+        log::info!(
+            "AniList: Getting complete franchise with details for anime ID '{}' using deep nested query",
+            id
+        );
+
+        let response: AniListFranchiseDiscoveryResponse = self
+            .make_graphql_request(ANIME_FRANCHISE_DISCOVERY_QUERY, Some(variables))
+            .await?;
+
+        let mut all_relations = HashMap::new();
+        let mut visited = HashSet::new();
+
+        if let Some(media) = response.media {
+            // Process the complete franchise tree with details
+            self.process_franchise_relations_with_details(&media, &mut all_relations, &mut visited);
+        }
+
+        // Convert to detailed format, excluding the starting anime
+        let franchise_relations: Vec<FranchiseRelation> = all_relations
+            .into_iter()
+            .filter(|(related_id, _)| *related_id != id) // Exclude self-reference
+            .map(|(id, details)| details)
+            .collect();
+
+        log::info!(
+            "AniList: Discovered {} franchise relations with details using single GraphQL query for ID '{}'",
+            franchise_relations.len(),
+            id
+        );
+
+        Ok(franchise_relations)
+    }
+
+    /// Complete franchise discovery with categorization and sorting
+    pub async fn discover_categorized_franchise(&self, id: u32) -> AppResult<CategorizedFranchise> {
+        // Get detailed franchise relations first
+        let relations = self.discover_complete_franchise_with_details(id).await?;
+
+        log::info!(
+            "AniList: Categorizing {} franchise relations for anime ID '{}'",
+            relations.len(),
+            id
+        );
+
+        // Categorize the relations
+        let mut categorized = CategorizedFranchise::new();
+        for relation in relations {
+            categorized.categorize_relation(relation);
+        }
+
+        // Sort each category chronologically
+        categorized.sort_all_categories();
+
+        log::info!(
+            "AniList: Categorized franchise for ID '{}' - Main: {}, Side: {}, Movies: {}, OVA/Special: {}, Other: {}",
+            id,
+            categorized.main_story.len(),
+            categorized.side_stories.len(),
+            categorized.movies.len(),
+            categorized.ovas_specials.len(),
+            categorized.other.len()
+        );
+
+        Ok(categorized)
+    }
+
+    /// Recursively process complete franchise relations with detailed information
+    fn process_franchise_relations_with_details(
+        &self,
+        media: &MediaWithFranchiseData,
+        all_relations: &mut HashMap<u32, FranchiseRelation>,
+        visited: &mut HashSet<u32>,
+    ) {
+        if let Some(current_id) = media.id {
+            let current_id = current_id as u32;
+
+            // Avoid infinite loops
+            if visited.contains(&current_id) {
+                return;
+            }
+            visited.insert(current_id);
+
+            // Process direct relations
+            if let Some(relations) = &media.relations {
+                for relation in &relations.edges {
+                    if let Some(node) = &relation.node {
+                        if let Some(related_id) = node.id {
+                            let related_id = related_id as u32;
+                            let relation_type =
+                                self.map_anilist_relation_type(&relation.relation_type);
+
+                            // Only add anime relations (filter out manga/other types)
+                            if let Some(media_type) = &node.media_type {
+                                if media_type.to_uppercase() == "ANIME" {
+                                    let title = node
+                                        .title
+                                        .as_ref()
+                                        .and_then(|t| {
+                                            t.romaji.clone().or_else(|| t.english.clone())
+                                        })
+                                        .unwrap_or_else(|| {
+                                            format!("Unknown Title (ID: {})", related_id)
+                                        });
+
+                                    all_relations.insert(
+                                        related_id,
+                                        FranchiseRelation {
+                                            id: related_id,
+                                            title,
+                                            relation_type: relation_type.clone(),
+                                            format: node.format.clone(),
+                                            status: node.status.clone(),
+                                            episodes: node.episodes,
+                                            start_year: node
+                                                .start_date
+                                                .as_ref()
+                                                .and_then(|d| d.year),
+                                        },
+                                    );
+                                }
+                            } else {
+                                // If no type specified, assume anime
+                                let title = node
+                                    .title
+                                    .as_ref()
+                                    .and_then(|t| t.romaji.clone().or_else(|| t.english.clone()))
+                                    .unwrap_or_else(|| {
+                                        format!("Unknown Title (ID: {})", related_id)
+                                    });
+
+                                all_relations.insert(
+                                    related_id,
+                                    FranchiseRelation {
+                                        id: related_id,
+                                        title,
+                                        relation_type: relation_type.clone(),
+                                        format: node.format.clone(),
+                                        status: node.status.clone(),
+                                        episodes: node.episodes,
+                                        start_year: node.start_date.as_ref().and_then(|d| d.year),
+                                    },
+                                );
+                            }
+
+                            // Recursively process nested relations
+                            self.process_franchise_relations_with_details(
+                                node,
+                                all_relations,
+                                visited,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Recursively process complete franchise relations from deep nested GraphQL response
+    fn process_franchise_relations(
+        &self,
+        media: &MediaWithFranchiseData,
+        all_relations: &mut HashMap<u32, String>,
+        visited: &mut HashSet<u32>,
+    ) {
+        if let Some(current_id) = media.id {
+            let current_id = current_id as u32;
+
+            // Avoid infinite loops
+            if visited.contains(&current_id) {
+                return;
+            }
+            visited.insert(current_id);
+
+            // Process direct relations
+            if let Some(relations) = &media.relations {
+                for relation in &relations.edges {
+                    if let Some(node) = &relation.node {
+                        if let Some(related_id) = node.id {
+                            let related_id = related_id as u32;
+                            let relation_type =
+                                self.map_anilist_relation_type(&relation.relation_type);
+
+                            // Only add anime relations (filter out manga/other types)
+                            if let Some(media_type) = &node.media_type {
+                                if media_type.to_uppercase() == "ANIME" {
+                                    all_relations.insert(related_id, relation_type);
+                                }
+                            } else {
+                                // If no type specified, assume anime
+                                all_relations.insert(related_id, relation_type);
+                            }
+
+                            // Recursively process nested relations
+                            self.process_franchise_relations(node, all_relations, visited);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Get popular anime

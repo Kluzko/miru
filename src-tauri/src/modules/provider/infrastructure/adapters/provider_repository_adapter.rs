@@ -162,6 +162,14 @@ pub trait ProviderAdapter: Send + Sync {
     async fn get_season_now(&self, limit: usize) -> AppResult<Vec<AnimeData>>;
     async fn get_season_upcoming(&self, limit: usize) -> AppResult<Vec<AnimeData>>;
 
+    // Relations - NOTE: Only AniList provides efficient relationship discovery
+    // Other providers should NOT implement this method due to performance limitations
+    async fn get_anime_relations(&self, _id: u32) -> AppResult<Vec<(u32, String)>> {
+        // Default implementation returns empty for non-AniList providers
+        // This is intentional - relationship discovery is AniList-exclusive
+        Ok(Vec::new())
+    }
+
     // Provider information
     fn get_provider_type(&self) -> AnimeProvider;
     fn can_make_request_now(&self) -> bool;

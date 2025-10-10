@@ -31,50 +31,33 @@ impl ImportExecutor {
         let item_timer = TimedOperation::new("import_single_validated_anime");
         let anime_title = &validated.anime_data.title.main;
 
-        // Get external ID and provider for duplicate checking (reused from existing)
-        let (external_id, provider) =
-            ValidationService::get_primary_external_info(&validated.anime_data);
+        // Note: We now use smart duplicate detection instead of just external ID checking
 
-        // STEP 1: Double-check for duplicates using external ID (reused from existing)
-        if ValidationService::is_valid_external_id(&external_id) {
-            match self
-                .anime_repo
-                .find_by_external_id(&provider, &external_id)
-                .await
-            {
-                Ok(Some(_existing_anime)) => {
-                    log_info!(
-                        "Skipping '{}' - already exists in database with {} ID: {}",
-                        anime_title,
-                        match provider {
-                            crate::modules::provider::AnimeProvider::Jikan => "MAL",
-                            crate::modules::provider::AnimeProvider::AniList => "AniList",
-                            _ => "Unknown",
-                        },
-                        external_id
-                    );
-                    item_timer.finish();
-                    return Err(ImportError {
-                        title: validated.input_title.clone(),
-                        reason: "Already exists in database".to_string(),
-                    });
-                }
-                Ok(None) => {
-                    log_info!(
-                        "External ID check passed for '{}', proceeding with save",
-                        anime_title
-                    );
-                }
-                Err(e) => {
-                    let context_error = AppError::DatabaseError(format!(
-                        "Pre-import external ID check failed for '{}' with provider {:?}: {}",
-                        anime_title, provider, e
-                    ));
-                    LogContext::error_with_context(
-                        &context_error,
-                        "Pre-import duplicate check failed",
-                    );
-                    // Continue with import as fallback
+        // STEP 1: Simple duplicate check using provider metadata
+        // Check if anime already exists by external ID
+        // Check if anime already exists by external ID for any provider
+        for (provider, external_id) in &validated.anime_data.provider_metadata.external_ids {
+            if let Ok(existing_anime_list) = self.anime_repo.get_all(0, 10000).await {
+                for existing in existing_anime_list {
+                    if let Some(existing_id) = existing.provider_metadata.get_external_id(provider)
+                    {
+                        if existing_id == external_id {
+                            log_info!(
+                                "Skipping '{}' - already exists with {} ID: {}",
+                                anime_title,
+                                provider,
+                                external_id
+                            );
+                            item_timer.finish();
+                            return Err(ImportError {
+                                title: validated.input_title.clone(),
+                                reason: format!(
+                                    "Already exists with {} ID: {}",
+                                    provider, external_id
+                                ),
+                            });
+                        }
+                    }
                 }
             }
         }

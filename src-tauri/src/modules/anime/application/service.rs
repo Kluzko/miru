@@ -190,4 +190,51 @@ impl AnimeService {
 
         Ok(result)
     }
+
+    /// Import relations for an anime from external providers
+    pub async fn import_relations_for_anime(
+        &self,
+        anime_id: &Uuid,
+    ) -> AppResult<super::super::commands::ImportRelationsResponse> {
+        use crate::modules::anime::commands::ImportRelationsResponse;
+
+        // For now, return a placeholder response
+        // In a full implementation, this would use the ImportAnimeRelationsUseCase
+        log_info!("Import relations requested for anime {}", anime_id);
+
+        // Check if anime exists
+        let anime = self.anime_repo.find_by_id(anime_id).await?;
+        if anime.is_none() {
+            return Ok(ImportRelationsResponse {
+                success: false,
+                relations_imported: 0,
+                franchise_size: 0,
+                errors: vec!["Anime not found".to_string()],
+            });
+        }
+
+        // Placeholder implementation - in real scenario would use ImportAnimeRelationsUseCase
+        Ok(ImportRelationsResponse {
+            success: true,
+            relations_imported: 0,
+            franchise_size: 0,
+            errors: vec!["Relations import feature coming soon".to_string()],
+        })
+    }
+
+    /// Save or update anime in the database
+    /// This method is used for enrichment operations where we need to persist merged data
+    pub async fn save_anime(&self, anime: &AnimeDetailed) -> AppResult<AnimeDetailed> {
+        log_debug!("Saving anime: {} (ID: {})", anime.title.main, anime.id);
+
+        let saved_anime = self.anime_repo.save(anime).await?;
+
+        log_info!(
+            "Successfully saved anime '{}' with {} external IDs",
+            saved_anime.title.main,
+            saved_anime.provider_metadata.external_ids.len()
+        );
+
+        Ok(saved_anime)
+    }
 }

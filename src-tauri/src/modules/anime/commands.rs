@@ -14,7 +14,7 @@ pub struct SearchAnimeRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct GetAnimeByIdRequest {
-    pub id: Uuid,
+    pub id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -81,10 +81,33 @@ pub async fn get_anime_by_id(
     request: GetAnimeByIdRequest,
     anime_service: State<'_, Arc<AnimeService>>,
 ) -> Result<Option<AnimeDetailed>, String> {
-    anime_service
-        .get_anime_by_id(&request.id)
-        .await
-        .map_err(|e| e.to_string())
+    log::info!("Getting anime by ID: '{}'", request.id);
+
+    // Parse the string ID as UUID with proper error handling
+    let anime_id = Uuid::parse_str(&request.id).map_err(|e| {
+        log::error!("Invalid anime ID format '{}': {}", request.id, e);
+        format!(
+            "Invalid anime ID format '{}': {}. Expected a valid UUID.",
+            request.id, e
+        )
+    })?;
+
+    log::info!("Parsed UUID successfully: {}", anime_id);
+
+    match anime_service.get_anime_by_id(&anime_id).await {
+        Ok(Some(anime)) => {
+            log::info!("Found anime: '{}' (ID: {})", anime.title.main, anime_id);
+            Ok(Some(anime))
+        }
+        Ok(None) => {
+            log::warn!("No anime found with ID: {}", anime_id);
+            Ok(None)
+        }
+        Err(e) => {
+            log::error!("Database error getting anime {}: {}", anime_id, e);
+            Err(format!("Database error: {}", e))
+        }
+    }
 }
 
 #[tauri::command]
@@ -136,3 +159,58 @@ pub async fn get_anime_by_external_id(
         .await
         .map_err(|e| e.to_string())
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct ImportRelationsRequest {
+    pub anime_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct ImportRelationsResponse {
+    pub success: bool,
+    pub relations_imported: usize,
+    pub franchise_size: usize,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct GetRelationsRequest {
+    pub anime_id: Uuid,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_anime_relations(
+    _request: GetRelationsRequest,
+    _anime_service: State<'_, Arc<AnimeService>>,
+) -> Result<Vec<AnimeDetailed>, String> {
+    // Legacy command - replaced by progressive relations API
+    // Use get_basic_relations, get_detailed_relations, or discover_franchise instead
+    Ok(Vec::new())
+}
+
+// ================================================================================================
+// RELATIONS TAB COMMANDS (New lazy-loading franchise discovery)
+// ================================================================================================
+
+// Legacy relations commands removed - functionality moved to progressive_relations
+
+// ================================================================================================
+// ENRICHMENT COMMANDS (Automatic provider data enhancement)
+// ================================================================================================
+
+// Re-export enrichment commands for provider data enhancement
+pub mod enrichment;
+pub use enrichment::*;
+
+// Re-export auto-enrichment commands for automatic background enrichment
+pub mod auto_enrichment;
+pub use auto_enrichment::*;
+
+// ================================================================================================
+// PROGRESSIVE RELATIONS COMMANDS (Stage-based loading for better UX)
+// ================================================================================================
+
+// Re-export progressive relations commands for stage-based loading
+pub mod progressive_relations;
+pub use progressive_relations::*;

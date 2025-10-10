@@ -100,8 +100,8 @@ diesel::table! {
         anime_id -> Uuid,
         related_anime_id -> Uuid,
         relation_type -> AnimeRelationType,
-        order_index -> Nullable<Int4>,
         created_at -> Nullable<Timestamptz>,
+        synced_at -> Nullable<Timestamptz>,
     }
 }
 

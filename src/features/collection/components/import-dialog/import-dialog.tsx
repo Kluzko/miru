@@ -44,7 +44,11 @@ export function ImportDialog({
     setStep,
   } = useImportValidation();
 
-  const { isImporting, enhancedMetrics, handleImport } = useImportExecution();
+  const {
+    isImporting,
+    enhancedMetrics: _enhancedMetrics,
+    handleImport,
+  } = useImportExecution();
 
   const {
     selectedExisting,

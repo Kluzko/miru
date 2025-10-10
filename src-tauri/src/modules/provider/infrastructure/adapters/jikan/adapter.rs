@@ -2,13 +2,13 @@ use async_trait::async_trait;
 
 use crate::{
     modules::provider::infrastructure::{
-        adapters::mapper::AnimeMapper, http_client::RateLimitClient,
+        adapters::{jikan::mapper::AnimeMapper, provider_repository_adapter::ProviderAdapter},
+        http_client::RateLimitClient,
     },
     modules::provider::{domain::entities::anime_data::AnimeData, AnimeProvider},
     shared::errors::{AppError, AppResult},
 };
 
-use super::super::provider_repository_adapter::ProviderAdapter;
 use super::mapper::JikanMapper;
 use super::models::*;
 
@@ -139,6 +139,22 @@ impl ProviderAdapter for JikanAdapter {
 
     fn can_make_request_now(&self) -> bool {
         self.can_make_request_now()
+    }
+
+    async fn get_anime_relations(&self, id: u32) -> AppResult<Vec<(u32, String)>> {
+        let relation_groups = self.fetch_raw_relations(id).await?;
+
+        let mut simple_relations = Vec::new();
+        for group in relation_groups {
+            for entry in group.entry {
+                // Only include anime entries, not manga
+                if entry.r#type.to_lowercase() == "anime" && entry.mal_id > 0 {
+                    simple_relations.push((entry.mal_id as u32, group.relation.clone()));
+                }
+            }
+        }
+
+        Ok(simple_relations)
     }
 }
 
@@ -360,7 +376,7 @@ impl JikanAdapter {
     }
 
     /// Get related anime
-    pub async fn get_anime_relations(&self, id: u32) -> AppResult<Vec<RelationGroup>> {
+    pub async fn fetch_raw_relations(&self, id: u32) -> AppResult<Vec<RelationGroup>> {
         let url = format!("{}/anime/{}/relations", self.base_url, id);
 
         log::info!("Jikan: Getting relations for anime ID '{}'", id);

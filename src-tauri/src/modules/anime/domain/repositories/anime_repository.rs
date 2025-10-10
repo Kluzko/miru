@@ -2,7 +2,19 @@ use super::super::entities::anime_detailed::AnimeDetailed;
 use crate::modules::provider::AnimeProvider;
 use crate::shared::errors::AppResult;
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use specta::Type;
+// JsonValue import removed - no longer needed with simplified relations approach
 use uuid::Uuid;
+
+/// Anime with relation metadata for batch fetching
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct AnimeWithRelationMetadata {
+    pub anime: AnimeDetailed,
+    pub relation_type: String,
+    pub synced_at: DateTime<Utc>,
+}
 
 #[async_trait]
 pub trait AnimeRepository: Send + Sync {
@@ -28,4 +40,16 @@ pub trait AnimeRepository: Send + Sync {
         &self,
         search_title: &str,
     ) -> AppResult<Option<AnimeDetailed>>;
+
+    // Relations management
+    async fn get_relations(&self, anime_id: &Uuid) -> AppResult<Vec<(Uuid, String)>>;
+    async fn save_relations(&self, anime_id: &Uuid, relations: &[(Uuid, String)]) -> AppResult<()>;
+
+    // Batch fetch anime with their relation metadata
+    async fn get_anime_with_relations(
+        &self,
+        anime_id: &Uuid,
+    ) -> AppResult<Vec<AnimeWithRelationMetadata>>;
+    // Note: enrich_relation method removed - with simplified approach,
+    // all enrichment is done by updating the complete anime record directly
 }

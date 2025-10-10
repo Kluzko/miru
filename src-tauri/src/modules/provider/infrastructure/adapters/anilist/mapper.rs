@@ -11,13 +11,51 @@ use crate::modules::provider::domain::{
     value_objects::provider_metadata::ProviderMetadata,
     AnimeProvider,
 };
-use crate::modules::provider::infrastructure::adapters::mapper::{
-    AdapterCapabilities, AnimeMapper,
-};
+
 use crate::shared::domain::value_objects::UnifiedAgeRestriction;
 use crate::shared::errors::AppError;
 use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
+
+/// Main mapper trait for converting provider-specific data to domain AnimeData
+pub trait AnimeMapper<T> {
+    /// Map provider data to domain AnimeData
+    fn map_to_anime_data(&self, source: T) -> Result<AnimeData, AppError>;
+
+    /// Map a list of provider data to domain AnimeData
+    fn map_to_anime_data_list(&self, sources: Vec<T>) -> Result<Vec<AnimeData>, AppError> {
+        sources
+            .into_iter()
+            .map(|source| self.map_to_anime_data(source))
+            .collect()
+    }
+}
+
+/// Capability trait to describe what each adapter can provide
+pub trait AdapterCapabilities {
+    /// Get the name of the adapter
+    fn name(&self) -> &'static str;
+
+    /// Get the provider fields this adapter can populate
+    fn supported_fields(&self) -> Vec<&'static str>;
+
+    /// Get the provider fields this adapter cannot populate
+    fn unsupported_fields(&self) -> Vec<&'static str>;
+
+    /// Check if the adapter supports a specific field
+    fn supports_field(&self, field: &str) -> bool {
+        self.supported_fields().contains(&field)
+    }
+
+    /// Get quality score for this adapter (0.0 to 1.0)
+    fn quality_score(&self) -> f64;
+
+    /// Get response time estimate in milliseconds
+    fn estimated_response_time(&self) -> u64;
+
+    /// Check if the adapter has rate limiting
+    fn has_rate_limiting(&self) -> bool;
+}
 
 /// AniList specific mapper implementation
 #[derive(Debug, Clone)]
@@ -91,19 +129,34 @@ impl AniListMapper {
             .unwrap_or_default()
     }
 
-    /// Extract studios from studio connection
+    /// Extract studios from studio connection (main studios only)
+    /// Handles both nodes (search queries) and edges (detail queries) structures
     fn extract_studios(studios: &Option<StudioConnection>) -> Vec<String> {
-        studios
-            .as_ref()
-            .and_then(|s| s.edges.as_ref())
-            .map(|edges| {
-                edges
-                    .iter()
-                    .filter_map(|edge| edge.node.as_ref())
-                    .filter_map(|studio| studio.name.clone())
-                    .collect()
-            })
-            .unwrap_or_default()
+        let connection = match studios.as_ref() {
+            Some(conn) => conn,
+            None => return Vec::new(),
+        };
+
+        // Try edges first (detail queries with isMain on edge)
+        if let Some(edges) = &connection.edges {
+            return edges
+                .iter()
+                .filter(|edge| edge.is_main.unwrap_or(false)) // Only main studios
+                .filter_map(|edge| edge.node.as_ref())
+                .filter_map(|studio| studio.name.clone())
+                .collect();
+        }
+
+        // Fallback to nodes (search queries with isMain on node)
+        if let Some(nodes) = &connection.nodes {
+            return nodes
+                .iter()
+                .filter(|studio| studio.is_main.unwrap_or(false)) // Only main studios
+                .filter_map(|studio| studio.name.clone())
+                .collect();
+        }
+
+        Vec::new()
     }
 
     /// Extract cover image URL
@@ -236,8 +289,14 @@ impl AnimeMapper<Media> for AniListMapper {
                 synonyms: source.synonyms.unwrap_or_default(),
             },
             provider_metadata,
-            score: source.average_score.map(|s| s as f32 / 10.0), // Convert from 100-point to 10-point scale
-            rating: source.average_score.map(|s| s as f32 / 10.0),
+            score: source.average_score.map(|s| {
+                let score = s as f32 / 10.0;
+                (score * 100.0).round() / 100.0 // Round to 2 decimal places
+            }),
+            rating: source.average_score.map(|s| {
+                let score = s as f32 / 10.0;
+                (score * 100.0).round() / 100.0 // Round to 2 decimal places
+            }),
             favorites: source.favourites.map(|f| f as u32),
             synopsis: source.description.clone(),
             description: source.description,
@@ -257,7 +316,13 @@ impl AnimeMapper<Media> for AniListMapper {
             images: Self::extract_cover_image(&source.cover_image),
             banner_image: source.banner_image,
             trailer_url: Self::extract_trailer_url(&source.trailer),
-            composite_score: source.average_score.map(|s| s as f32 / 10.0).unwrap_or(0.0),
+            composite_score: source
+                .average_score
+                .map(|s| {
+                    let score = s as f32 / 10.0;
+                    (score * 100.0).round() / 100.0 // Round to 2 decimal places
+                })
+                .unwrap_or(0.0),
             tier: AnimeTier::default(),
             quality_metrics: QualityMetrics::default(),
             created_at: now,
@@ -399,3 +464,5 @@ mod tests {
         assert_eq!(AniListMapper::map_anime_type(&None), AnimeType::Unknown);
     }
 }
+
+impl AniListMapper {}

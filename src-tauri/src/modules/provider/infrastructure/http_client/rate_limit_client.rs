@@ -155,16 +155,24 @@ impl RateLimitClient {
 
                     // Handle other HTTP errors
                     if !response.status().is_success() {
-                        let error_msg = format!(
-                            "{} API returned error: {}",
+                        // Log response details for debugging
+                        let status = response.status();
+                        let response_text = response
+                            .text()
+                            .await
+                            .unwrap_or_else(|_| "Failed to read response".to_string());
+                        log::error!(
+                            "{} API error response: status={}, body={}",
                             self.provider_name,
-                            response.status()
+                            status,
+                            response_text
                         );
 
+                        let error_msg =
+                            format!("{} API returned error: {}", self.provider_name, status);
+
                         // Only retry server errors
-                        if response.status().is_server_error()
-                            && attempt < self.retry_policy.max_retries
-                        {
+                        if status.is_server_error() && attempt < self.retry_policy.max_retries {
                             let delay = self.retry_policy.calculate_delay(attempt, None);
                             log::warn!(
                                 "{} (attempt {}/{}). Retrying in {:?}",

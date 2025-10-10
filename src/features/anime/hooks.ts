@@ -17,6 +17,8 @@ export const animeKeys = {
   seasonal: (year: number, season: string) =>
     [...animeKeys.all, "seasonal", year, season] as const,
   seasonalList: () => [...animeKeys.all, "seasonal"] as const,
+  relations: (id: string) => [...animeKeys.all, "relations", id] as const,
+  relationsList: () => [...animeKeys.all, "relations"] as const,
 };
 
 export function useAnimeSearch(
@@ -112,6 +114,10 @@ export function useSeasonalAnime(year: number, season: string) {
   });
 }
 
+// Note: useAnimeRelations has been removed
+// Use useAnimeWithRelations from @/features/anime/components/anime-detailed/hooks instead
+// The new hook uses a single optimized backend call with auto-discovery
+
 // Background prefetching utilities
 export function useAnimePrefetch() {
   const queryClient = useQueryClient();
@@ -148,6 +154,9 @@ export function useAnimePrefetch() {
     prefetchSearchResults,
   };
 }
+
+// Note: useAnimeRelationsCacheUtils has been removed
+// Relations cache utilities are now part of useAnimeWithRelationsCache hook
 
 // Cache management utilities
 export function useAnimeCacheUtils() {

@@ -1,5 +1,5 @@
 // src/invoke.ts
-import { commands, type Result } from "@/types";
+import { commands, type Result } from "@/types/bindings";
 
 // All generated command functions (from tauri-specta)
 type Commands = typeof commands;

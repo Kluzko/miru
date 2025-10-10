@@ -1,13 +1,10 @@
 pub mod anilist;
 pub mod cache_adapter;
 pub mod jikan;
-pub mod mapper;
 pub mod provider_repository_adapter;
 
 // Use specific imports to avoid conflicts
 pub use anilist::AniListAdapter;
 pub use cache_adapter::*;
 pub use jikan::JikanAdapter;
-
-pub use mapper::*;
 pub use provider_repository_adapter::*;

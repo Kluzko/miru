@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useSettingsStore, type TitleLanguage } from "@/stores/settings-store";
 
-import { Info, Monitor, Database } from "lucide-react";
+import { Info, Monitor } from "lucide-react";
 
 export function SettingsPage() {
   const { preferredTitleLanguage, setPreferredTitleLanguage } =

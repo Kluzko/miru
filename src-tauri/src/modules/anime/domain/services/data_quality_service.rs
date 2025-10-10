@@ -163,12 +163,14 @@ impl DataQualityService {
 
                 let weighted_score = (base_score * base_weight + other_score * other_weight)
                     / (base_weight + other_weight);
-                Some(weighted_score)
+                // Round to 2 decimal places for consistency
+                Some((weighted_score * 100.0).round() / 100.0)
             }
             (Some(score), None, _, _) | (None, Some(score), _, _) => Some(score),
             (None, None, _, _) => None,
         }
     }
+    
 
     /// Select best description (prefer longer, more detailed)
     fn select_best_description(
