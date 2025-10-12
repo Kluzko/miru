@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { animeApi } from "@/features/anime/api";
+import { animeLogger } from "@/lib/logger";
 
 interface AutoEnrichmentResult {
   enrichmentPerformed: boolean;
@@ -27,13 +28,13 @@ export function useAutoEnrichment(animeId: string | undefined) {
       setIsEnriching(true);
 
       try {
-        console.log("🔍 Auto-enriching anime:", animeId);
+        animeLogger.debug("Starting auto-enrichment", { animeId });
         const result = await animeApi.autoEnrichOnLoad(animeId);
 
         if (isCancelled) return;
 
         if (result.enrichmentPerformed) {
-          console.log("✅ Auto-enrichment completed:", {
+          animeLogger.success("Auto-enrichment completed", {
             animeId,
             providersFound: result.providersFound,
             shouldReload: result.shouldReload,
@@ -46,17 +47,22 @@ export function useAutoEnrichment(animeId: string | undefined) {
           if (result.shouldReload) {
             setTimeout(() => {
               if (!isCancelled) {
-                console.log("🔄 Reloading page due to successful enrichment");
+                animeLogger.info("Reloading page due to successful enrichment");
                 window.location.reload();
               }
             }, 1500); // Give user time to see the enrichment happened
           }
         } else {
-          console.log("ℹ️ Auto-enrichment: No missing data found for", animeId);
+          animeLogger.debug("No missing data found for auto-enrichment", {
+            animeId,
+          });
         }
       } catch (error) {
         if (!isCancelled) {
-          console.warn("⚠️ Auto-enrichment failed:", error);
+          animeLogger.warn("Auto-enrichment failed", {
+            animeId,
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
       } finally {
         if (!isCancelled) {

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { useDeleteCollection } from "../../../hooks";
 import type { Collection } from "@/types";
+import { collectionLogger } from "@/lib/logger";
 
 interface DeleteCollectionDialogProps {
   isOpen: boolean;
@@ -36,7 +37,7 @@ export function DeleteCollectionDialog({
       onClose();
       onDeleted?.();
     } catch (error) {
-      console.error("Failed to delete collection:", error);
+      collectionLogger.error("Failed to delete collection", { error });
     }
   };
 

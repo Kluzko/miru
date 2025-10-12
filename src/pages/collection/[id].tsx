@@ -18,6 +18,7 @@ import {
 
 import { EmptyState } from "@/components/common/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { collectionLogger } from "@/lib/logger";
 
 export function CollectionDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -66,7 +67,14 @@ export function CollectionDetailPage() {
                   anime_id: animeId,
                 });
               } catch (error) {
-                console.error("Failed to remove anime from collection:", error);
+                collectionLogger.error(
+                  "Failed to remove anime from collection",
+                  error,
+                  {
+                    collectionId: id,
+                    animeId,
+                  },
+                );
               }
             }}
           />
@@ -78,7 +86,10 @@ export function CollectionDetailPage() {
         onClose={() => setImportOpen(false)}
         collectionId={id}
         onAnimesImported={(animeIds: string[]) => {
-          console.log("Imported anime IDs:", animeIds);
+          collectionLogger.debug("Anime imported to collection", {
+            collectionId: id,
+            count: animeIds.length,
+          });
           // The collection anime list will automatically refresh via query invalidation
         }}
       />

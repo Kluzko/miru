@@ -25,6 +25,7 @@ import {
 import type { AnimeDetailed } from "@/types/bindings";
 import { getTierInfo, hasEnglishTitle } from "@/lib/anime-utils";
 import { animeApi } from "@/features/anime/api";
+import { animeLogger, uiLogger } from "@/lib/logger";
 import { AnimeOverviewTab, AnimeRelationsTab } from "./tabs";
 import { ProviderWarningCard } from "./provider-warning-card";
 
@@ -116,12 +117,12 @@ function WatchStatusDropdown({
 
 function QuickRateComponent({
   currentRating,
-  // onRatingChange, // TODO: Uncomment when AnimeRatingModal is implemented
-  // animeTitle, // TODO: Uncomment when AnimeRatingModal is implemented
+  animeId,
 }: {
   currentRating: number;
   onRatingChange: (rating: number) => void;
   animeTitle: string;
+  animeId: string;
 }) {
   return (
     <>
@@ -129,7 +130,11 @@ function QuickRateComponent({
         variant="outline"
         className="transition-all duration-300 hover:scale-105 bg-transparent w-full sm:w-auto"
         size="sm"
-        onClick={() => console.log("Rating modal not implemented yet")}
+        onClick={() =>
+          uiLogger.debug("Rating modal not implemented yet", {
+            animeId,
+          })
+        }
       >
         <Star
           className={`h-4 w-4 mr-2 ${currentRating > 0 ? "fill-yellow-400 text-yellow-400" : ""}`}
@@ -154,11 +159,9 @@ export function AnimeDetailTabs({
   const handleAddToCollection = async () => {
     if (collectionId) {
       setIsAddingToCollection(true);
-      console.log("Adding anime to collection:", {
+      animeLogger.debug("Adding anime to collection", {
         collection_id: collectionId,
         anime_id: anime.id,
-        user_score: null,
-        notes: null,
       });
       await new Promise((resolve) => setTimeout(resolve, 1000));
       setIsAddingToCollection(false);
@@ -168,52 +171,67 @@ export function AnimeDetailTabs({
 
   const handleWatchStatusChange = (newStatus: WatchStatus) => {
     setWatchStatus(newStatus);
-    console.log("Watch status changed:", {
+    animeLogger.userAction("Watch status changed", {
       anime_id: anime.id,
       status: newStatus,
+      component: "AnimeDetailTabs",
     });
   };
 
   const handleRatingChange = (rating: number) => {
     setUserRating(rating);
-    console.log("User rating changed:", { anime_id: anime.id, rating });
+    animeLogger.userAction("User rating changed", {
+      anime_id: anime.id,
+      rating,
+      component: "AnimeDetailTabs",
+    });
   };
 
   const handleEnrichProviders = async () => {
     try {
-      console.log("Enriching providers for anime:", anime.id);
+      animeLogger.debug("Enriching providers", { animeId: anime.id });
       const result = await animeApi.enrichProviders(anime.id);
-      console.log("Enrichment result:", result);
 
       if (result.success) {
-        // Optionally show success message
-        console.log("Successfully enriched providers:", result.providersAdded);
+        animeLogger.success("Providers enriched successfully", {
+          animeId: anime.id,
+          providersAdded: result.providersAdded,
+        });
         window.location.reload(); // Refresh to show updated data
       } else {
-        console.warn("Enrichment completed with errors:", result.errors);
+        animeLogger.warn("Enrichment completed with errors", {
+          animeId: anime.id,
+          errors: result.errors,
+        });
       }
     } catch (error) {
-      console.error("Failed to enrich providers:", error);
+      animeLogger.error("Failed to enrich providers", error, {
+        animeId: anime.id,
+      });
     }
   };
 
   const handleResyncAnime = async () => {
     try {
-      console.log("Re-syncing anime:", anime.id);
+      animeLogger.debug("Re-syncing anime", { animeId: anime.id });
       const result = await animeApi.resyncAnime(anime.id, true);
-      console.log("Re-sync result:", result);
 
       if (result.success) {
-        console.log(
-          "Successfully re-synced from providers:",
-          result.providersSynced,
-        );
+        animeLogger.success("Anime re-synced successfully", {
+          animeId: anime.id,
+          providersSynced: result.providersSynced,
+        });
         window.location.reload(); // Refresh to show updated data
       } else {
-        console.warn("Re-sync completed with errors:", result.errors);
+        animeLogger.warn("Re-sync completed with errors", {
+          animeId: anime.id,
+          errors: result.errors,
+        });
       }
     } catch (error) {
-      console.error("Failed to re-sync anime:", error);
+      animeLogger.error("Failed to re-sync anime", error, {
+        animeId: anime.id,
+      });
     }
   };
 
@@ -356,6 +374,7 @@ export function AnimeDetailTabs({
                       ? anime.title.english!
                       : anime.title.main
                   }
+                  animeId={anime.id}
                 />
                 {collectionId && (
                   <Button

@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { commands } from "@/types";
 import type { EnhancedValidationResult } from "@/types";
 import { useAddMultipleAnimeToCollection } from "../../../hooks";
+import { importLogger } from "@/lib/logger";
 
 interface ImportProgress {
   current: number;
@@ -42,13 +43,14 @@ export function useImportExecution() {
           const progress = event.payload;
           setImportProgress(progress);
 
-          // Log import progress for debugging
-          console.log(
-            `Import progress: ${progress.processed}/${progress.total} - ${progress.current_title}`,
+          importLogger.importProgress(
+            progress.processed,
+            progress.total,
+            progress.current_title,
           );
         });
       } catch (error) {
-        console.warn("Failed to set up import progress listener:", error);
+        importLogger.error("Failed to set up import progress listener", error);
       }
     };
 
@@ -83,9 +85,9 @@ export function useImportExecution() {
 
       // Step 1: Import new anime using already validated data (NO re-validation!)
       if (hasNewAnime) {
-        console.log(
-          `Starting import of ${validationResult.found.length} pre-validated anime...`,
-        );
+        importLogger.info("Starting import of pre-validated anime", {
+          count: validationResult.found.length,
+        });
 
         // Transform enhanced validated anime to simple validated anime format
         const validatedAnime = validationResult.found.map((enhanced) => ({
@@ -126,16 +128,20 @@ export function useImportExecution() {
             gapsFilledCount: 0, // No gaps filled since we're using pre-validated data
             importDurationMs: importDuration,
           };
+
           setEnhancedMetrics(metrics);
 
-          console.log(
-            `Successfully imported ${newImportedIds.length} pre-validated anime (no re-validation needed)`,
-          );
-          console.log(
-            `Average confidence: ${(avgConfidence * 100).toFixed(1)}%, Quality: ${(avgQuality * 10).toFixed(1)}/10`,
-          );
+          importLogger.success("Import completed (no re-validation needed)", {
+            imported: newImportedIds.length,
+            avgConfidence: `${(avgConfidence * 100).toFixed(1)}%`,
+            avgQuality: `${(avgQuality * 10).toFixed(1)}/10`,
+            durationMs: importDuration,
+          });
         } else {
-          console.error("Import of validated anime failed:", result.error);
+          importLogger.error(
+            "Import of validated anime failed",
+            new Error(result.error),
+          );
           throw new Error(result.error);
         }
       }
@@ -144,14 +150,17 @@ export function useImportExecution() {
       if (hasSelectedExisting) {
         const existingIds = Array.from(selectedExisting);
         allAnimeIds = [...allAnimeIds, ...existingIds];
-        console.log(`Adding ${existingIds.length} existing anime to the list`);
+        importLogger.info("Adding existing anime to list", {
+          count: existingIds.length,
+        });
       }
 
       // Step 3: If we have a collection context, add all anime to the collection
       if (collectionId && allAnimeIds.length > 0) {
-        console.log(
-          `Adding ${allAnimeIds.length} anime to collection ${collectionId}`,
-        );
+        importLogger.info("Adding anime to collection", {
+          collectionId,
+          count: allAnimeIds.length,
+        });
 
         await addToCollection.mutateAsync({
           collectionId,
@@ -162,7 +171,7 @@ export function useImportExecution() {
       onAnimesImported?.(allAnimeIds);
       return allAnimeIds;
     } catch (error) {
-      console.error("Import failed:", error);
+      importLogger.error("Import failed", error);
       throw error;
     } finally {
       setIsImporting(false);

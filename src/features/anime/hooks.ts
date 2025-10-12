@@ -4,6 +4,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { animeApi } from "./api";
+import { animeLogger } from "@/lib/logger";
 
 // Enhanced query keys factory with better categorization
 export const animeKeys = {
@@ -28,19 +29,28 @@ export function useAnimeSearch(
     keepPreviousData?: boolean;
   },
 ) {
+  const isEnabled = (options?.enabled ?? true) && query.length > 2;
+
   return useQuery({
     queryKey: animeKeys.search(query),
-    queryFn: () => animeApi.search(query),
-    enabled: (options?.enabled ?? true) && query.length > 2,
-    retry: 2,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
-    refetchOnWindowFocus: false, // Don't refetch on window focus for search
+    queryFn: async () => {
+      animeLogger.debug("Searching anime", { query });
+      const timer = animeLogger.startTimed("Anime search");
+      try {
+        const result = await animeApi.search(query);
+        timer.success({ query, results: result?.length || 0 });
+        return result;
+      } catch (error) {
+        timer.error(error, { query });
+        throw error;
+      }
+    },
+    enabled: isEnabled,
+    // Use global staleTime/gcTime from api-cache.ts (15min/30min)
     placeholderData: options?.keepPreviousData
       ? (previousData) => previousData
       : undefined,
     meta: {
-      // Custom metadata for debugging
       description: `Search anime with query: ${query}`,
     },
   });
@@ -54,13 +64,21 @@ export function useAnimeDetail(
 ) {
   return useQuery({
     queryKey: animeKeys.detail(id),
-    queryFn: () => animeApi.getById(id),
+    queryFn: async () => {
+      animeLogger.debug("Fetching anime detail", { id });
+      const timer = animeLogger.startTimed("Fetch anime detail");
+      try {
+        const result = await animeApi.getById(id);
+        timer.success({ id, title: result?.title?.main || "Unknown" });
+        return result;
+      } catch (error) {
+        timer.error(error, { id });
+        throw error;
+      }
+    },
     enabled: !!id,
-    staleTime: 10 * 60 * 1000, // 10 minutes - anime details don't change often
-    gcTime: 30 * 60 * 1000, // Keep in cache for 30 minutes
+    // Use global staleTime/gcTime from api-cache.ts (15min/30min)
     refetchOnWindowFocus: options?.backgroundRefetch ?? false,
-    retry: 3, // More retries for detail views
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     meta: {
       description: `Anime detail for ID: ${id}`,
     },
@@ -70,11 +88,20 @@ export function useAnimeDetail(
 export function useTopAnime(page = 1) {
   return useQuery({
     queryKey: animeKeys.top(page),
-    queryFn: () => animeApi.getTop(page),
-    staleTime: 15 * 60 * 1000, // 15 minutes - top lists are relatively stable
-    gcTime: 60 * 60 * 1000, // 1 hour cache time
-    refetchOnWindowFocus: false,
-    placeholderData: (previousData) => previousData, // Smooth pagination experience
+    queryFn: async () => {
+      animeLogger.debug("Fetching top anime", { page });
+      const timer = animeLogger.startTimed("Fetch top anime");
+      try {
+        const result = await animeApi.getTop(page);
+        timer.success({ page, count: result?.length || 0 });
+        return result;
+      } catch (error) {
+        timer.error(error, { page });
+        throw error;
+      }
+    },
+    // Use global staleTime/gcTime from api-cache.ts (15min/30min)
+    placeholderData: (previousData) => previousData,
     meta: {
       description: `Top anime page ${page}`,
     },
@@ -91,9 +118,7 @@ export function useInfiniteTopAnime() {
       // Assume API returns hasNextPage or similar
       return lastPage.length === 25 ? allPages.length + 1 : undefined;
     },
-    staleTime: 15 * 60 * 1000,
-    gcTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
+    // Use global staleTime/gcTime from api-cache.ts (15min/30min)
     meta: {
       description: "Infinite scroll top anime list",
     },
@@ -103,11 +128,22 @@ export function useInfiniteTopAnime() {
 export function useSeasonalAnime(year: number, season: string) {
   return useQuery({
     queryKey: animeKeys.seasonal(year, season),
-    queryFn: () => animeApi.getSeasonal(year, season),
+    queryFn: async () => {
+      animeLogger.debug("Fetching seasonal anime", { year, season });
+      const timer = animeLogger.startTimed("Fetch seasonal anime");
+      try {
+        const result = await animeApi.getSeasonal(year, season);
+        timer.success({ year, season, count: result?.length || 0 });
+        return result;
+      } catch (error) {
+        timer.error(error, { year, season });
+        throw error;
+      }
+    },
     enabled: !!year && !!season,
-    staleTime: 60 * 60 * 1000, // 1 hour - seasonal data is very stable
-    gcTime: 24 * 60 * 60 * 1000, // 24 hour cache
-    refetchOnWindowFocus: false,
+    // Override: Seasonal data is very stable, cache longer
+    staleTime: 60 * 60 * 1000, // 1 hour
+    gcTime: 24 * 60 * 60 * 1000, // 24 hours
     meta: {
       description: `Seasonal anime for ${season} ${year}`,
     },
@@ -126,7 +162,7 @@ export function useAnimePrefetch() {
     queryClient.prefetchQuery({
       queryKey: animeKeys.detail(id),
       queryFn: () => animeApi.getById(id),
-      staleTime: 10 * 60 * 1000,
+      // Uses global staleTime from api-cache.ts
     });
   };
 
@@ -134,7 +170,7 @@ export function useAnimePrefetch() {
     queryClient.prefetchQuery({
       queryKey: animeKeys.top(page),
       queryFn: () => animeApi.getTop(page),
-      staleTime: 15 * 60 * 1000,
+      // Uses global staleTime from api-cache.ts
     });
   };
 
@@ -143,7 +179,7 @@ export function useAnimePrefetch() {
       queryClient.prefetchQuery({
         queryKey: animeKeys.search(query),
         queryFn: () => animeApi.search(query),
-        staleTime: 5 * 60 * 1000,
+        // Uses global staleTime from api-cache.ts
       });
     }
   };
@@ -163,24 +199,28 @@ export function useAnimeCacheUtils() {
   const queryClient = useQueryClient();
 
   const invalidateSearches = () => {
+    animeLogger.info("Invalidating all search caches");
     queryClient.invalidateQueries({
       queryKey: animeKeys.searches(),
     });
   };
 
   const invalidateAnimeDetail = (id: string) => {
+    animeLogger.info("Invalidating anime detail cache", { id });
     queryClient.invalidateQueries({
       queryKey: animeKeys.detail(id),
     });
   };
 
   const clearAnimeCache = () => {
+    animeLogger.warn("Clearing ALL anime cache");
     queryClient.removeQueries({
       queryKey: animeKeys.all,
     });
   };
 
   const updateAnimeInCache = (id: string, updater: (old: any) => any) => {
+    animeLogger.debug("Updating anime in cache", { id });
     queryClient.setQueryData(animeKeys.detail(id), updater);
   };
 

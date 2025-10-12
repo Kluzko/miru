@@ -36,9 +36,6 @@ pub fn run() {
     // Load environment variables
     dotenvy::dotenv().ok();
 
-    // Initialize structured logging
-    shared::utils::logger::init_logger();
-
     let specta_builder = SpectaBuilder::<tauri::Wry>::new().commands(get_all_commands());
 
     #[cfg(debug_assertions)]
@@ -51,6 +48,54 @@ pub fn run() {
         // Tell Tauri how to invoke commands from centralized registry
         .invoke_handler(crate::generate_handler_list!())
         .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .clear_targets()
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                ])
+                .level(log::LevelFilter::Debug)
+                .format(|out, message, record| {
+                    // Extract meaningful module name from path
+                    let target = record.target();
+
+                    if target.starts_with("miru_lib::modules::") {
+                        // Backend module: miru_lib::modules::anime::commands -> [LEVEL] [BACKEND] [anime] message
+                        let module = target.strip_prefix("miru_lib::modules::")
+                            .and_then(|s| s.split("::").next())
+                            .unwrap_or("");
+                        out.finish(format_args!(
+                            "[{}] [BACKEND] [{}] {}",
+                            record.level(),
+                            module,
+                            message
+                        ))
+                    } else if target.starts_with("miru_lib") {
+                        // General backend: [LEVEL] [BACKEND] message
+                        out.finish(format_args!(
+                            "[{}] [BACKEND] {}",
+                            record.level(),
+                            message
+                        ))
+                    } else if target.starts_with("webview:") {
+                        // Frontend logs: strip webview prefix, message already contains [FRONTEND] [module]
+                        out.finish(format_args!(
+                            "[{}] {}",
+                            record.level(),
+                            message
+                        ))
+                    } else {
+                        // Other logs
+                        out.finish(format_args!(
+                            "[{}] [{}] {}",
+                            record.level(),
+                            target,
+                            message
+                        ))
+                    }
+                })
+                .build(),
+        )
         .setup(move |app| {
             // If you want typed events, mount specta's event hooks here.
             // `specta_builder` is moved into this closure (no later uses outside).

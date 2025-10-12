@@ -1,6 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { animeApi } from "@/features/anime/api";
+import { animeKeys } from "@/features/anime/hooks";
 import type { AnimeDetailed } from "@/types/bindings";
+import { animeLogger } from "@/lib/logger";
 
 // Temporary type definition until bindings are regenerated
 interface AnimeWithRelationMetadata {
@@ -27,7 +29,7 @@ export function useAnimeWithRelations(
   animeId: string,
   options: UseAnimeWithRelationsOptions = {},
 ) {
-  console.log("🎯 useAnimeWithRelations called with:", {
+  animeLogger.debug("useAnimeWithRelations called", {
     animeId,
     enabled: options.enabled,
   });
@@ -36,17 +38,17 @@ export function useAnimeWithRelations(
   const { enabled = true } = options;
 
   const query = useQuery({
-    queryKey: ["anime-with-relations", animeId],
+    queryKey: animeKeys.relations(animeId),
     queryFn: () => {
-      console.log("🔍 Calling getAnimeWithRelations for animeId:", animeId);
+      animeLogger.debug("Fetching anime with relations", { animeId });
       return animeApi.getAnimeWithRelations(animeId) as Promise<
         AnimeWithRelationMetadata[]
       >;
     },
     enabled: enabled && !!animeId,
-    staleTime: 30 * 60 * 60 * 1000, // 30 minutes
+    staleTime: 30 * 60 * 1000, // 30 minutes
     gcTime: 2 * 60 * 60 * 1000, // 2 hours
-    retry: 1, // Reduced since backend handles auto-discovery
+    retry: 2,
     refetchOnWindowFocus: false,
     meta: {
       description: `Batch anime with relations for ${animeId}`,
@@ -75,14 +77,16 @@ export function useAnimeWithRelations(
 
   // Action handlers
   const refreshRelations = () => {
+    animeLogger.info("Refreshing relations", { animeId });
     queryClient.invalidateQueries({
-      queryKey: ["anime-with-relations", animeId],
+      queryKey: animeKeys.relations(animeId),
     });
   };
 
   const preloadRelations = (targetAnimeId: string) => {
+    animeLogger.debug("Preloading relations", { targetAnimeId });
     queryClient.prefetchQuery({
-      queryKey: ["anime-with-relations", targetAnimeId],
+      queryKey: animeKeys.relations(targetAnimeId),
       queryFn: () => animeApi.getAnimeWithRelations(targetAnimeId),
       staleTime: 30 * 60 * 1000,
     });
@@ -92,17 +96,14 @@ export function useAnimeWithRelations(
     // Data
     relations,
     relationsByCategory,
-
     // State
     isLoading: query.isLoading,
     isError: query.isError,
     error: query.error,
     hasRelations,
-
     // Actions
     refreshRelations,
     preloadRelations,
-
     // Raw query for advanced usage
     query,
   } as const;
@@ -115,20 +116,23 @@ export function useAnimeWithRelationsCache() {
   const queryClient = useQueryClient();
 
   const invalidateRelations = (animeId: string) => {
+    animeLogger.info("Invalidating relations cache", { animeId });
     queryClient.invalidateQueries({
-      queryKey: ["anime-with-relations", animeId],
+      queryKey: animeKeys.relations(animeId),
     });
   };
 
   const clearRelationsCache = (animeId: string) => {
+    animeLogger.info("Clearing relations cache", { animeId });
     queryClient.removeQueries({
-      queryKey: ["anime-with-relations", animeId],
+      queryKey: animeKeys.relations(animeId),
     });
   };
 
   const clearAllRelationsCache = () => {
+    animeLogger.warn("Clearing ALL relations cache");
     queryClient.removeQueries({
-      queryKey: ["anime-with-relations"],
+      queryKey: animeKeys.relationsList(),
     });
   };
 

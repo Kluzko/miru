@@ -1,7 +1,8 @@
-import React from 'react';
-import { Button } from '@/components/ui/button';
-import { AlertCircle, RefreshCw, Home } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import React from "react";
+import { Button } from "@/components/ui/button";
+import { AlertCircle, RefreshCw, Home } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { errorLogger } from "@/lib/logger";
 
 interface ErrorInfo {
   componentStack: string;
@@ -30,7 +31,10 @@ export interface ErrorFallbackProps {
   errorId: string;
 }
 
-export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+export class ErrorBoundary extends React.Component<
+  ErrorBoundaryProps,
+  ErrorBoundaryState
+> {
   private resetTimeoutId: number | null = null;
 
   constructor(props: ErrorBoundaryProps) {
@@ -40,7 +44,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
       hasError: false,
       error: null,
       errorInfo: null,
-      errorId: '',
+      errorId: "",
     };
   }
 
@@ -61,12 +65,18 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
       errorInfo,
     });
 
-    // Log to console in development
-    if (process.env.NODE_ENV === 'development') {
-      console.group(`🚨 Error Boundary Caught Error [${errorId}]`);
-      console.error('Error:', error);
-      console.error('Component Stack:', errorInfo.componentStack);
-      console.groupEnd();
+    // Log error using logger
+    if (process.env.NODE_ENV === "development") {
+      errorLogger.group(`🚨 Error Boundary Caught Error [${errorId}]`, () => {
+        errorLogger.error("Error caught", error, {
+          errorId,
+          componentStack: errorInfo.componentStack,
+        });
+      });
+    } else {
+      errorLogger.error("Error boundary caught error", error, {
+        errorId,
+      });
     }
 
     // Call custom error handler
@@ -78,12 +88,19 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     const { hasError } = this.state;
 
     if (hasError && prevProps.resetKeys !== resetKeys) {
-      if (resetKeys && resetKeys.some((key, index) => prevProps.resetKeys?.[index] !== key)) {
+      if (
+        resetKeys &&
+        resetKeys.some((key, index) => prevProps.resetKeys?.[index] !== key)
+      ) {
         this.resetErrorBoundary();
       }
     }
 
-    if (hasError && resetOnPropsChange && prevProps.children !== this.props.children) {
+    if (
+      hasError &&
+      resetOnPropsChange &&
+      prevProps.children !== this.props.children
+    ) {
       this.resetErrorBoundary();
     }
   }
@@ -98,7 +115,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
         hasError: false,
         error: null,
         errorInfo: null,
-        errorId: '',
+        errorId: "",
       });
     }, 0);
   };
@@ -126,12 +143,12 @@ export function DefaultErrorFallback({
   error,
   errorInfo,
   resetError,
-  errorId
+  errorId,
 }: ErrorFallbackProps) {
   const navigate = useNavigate();
 
   const handleGoHome = () => {
-    navigate('/');
+    navigate("/");
     resetError();
   };
 
@@ -166,11 +183,12 @@ export function DefaultErrorFallback({
         <div className="space-y-2">
           <h2 className="text-2xl font-bold">Something went wrong</h2>
           <p className="text-muted-foreground">
-            We're sorry, but something unexpected happened. The error has been logged.
+            We're sorry, but something unexpected happened. The error has been
+            logged.
           </p>
         </div>
 
-        {process.env.NODE_ENV === 'development' && (
+        {process.env.NODE_ENV === "development" && (
           <details className="text-left">
             <summary className="cursor-pointer text-sm font-medium">
               Error Details (Development)
@@ -189,7 +207,9 @@ export function DefaultErrorFallback({
               {errorInfo && (
                 <div>
                   <strong>Component Stack:</strong>
-                  <pre className="mt-1 whitespace-pre-wrap">{errorInfo.componentStack}</pre>
+                  <pre className="mt-1 whitespace-pre-wrap">
+                    {errorInfo.componentStack}
+                  </pre>
                 </div>
               )}
             </div>
@@ -197,17 +217,25 @@ export function DefaultErrorFallback({
         )}
 
         <div className="flex flex-col gap-3 sm:flex-row">
-          <Button onClick={resetError} variant="default" className="flex items-center gap-2">
+          <Button
+            onClick={resetError}
+            variant="default"
+            className="flex items-center gap-2"
+          >
             <RefreshCw className="h-4 w-4" />
             Try Again
           </Button>
 
-          <Button onClick={handleGoHome} variant="outline" className="flex items-center gap-2">
+          <Button
+            onClick={handleGoHome}
+            variant="outline"
+            className="flex items-center gap-2"
+          >
             <Home className="h-4 w-4" />
             Go Home
           </Button>
 
-          {process.env.NODE_ENV === 'development' && (
+          {process.env.NODE_ENV === "development" && (
             <Button onClick={copyErrorDetails} variant="outline" size="sm">
               Copy Error Details
             </Button>
@@ -223,7 +251,10 @@ export function DefaultErrorFallback({
 }
 
 // Specialized error boundaries for different contexts
-export function AsyncBoundary({ children, ...props }: Omit<ErrorBoundaryProps, 'fallback'>) {
+export function AsyncBoundary({
+  children,
+  ...props
+}: Omit<ErrorBoundaryProps, "fallback">) {
   return (
     <ErrorBoundary fallback={AsyncErrorFallback} {...props}>
       {children}
@@ -237,9 +268,13 @@ function AsyncErrorFallback({ error, resetError }: ErrorFallbackProps) {
       <AlertCircle className="mb-4 h-12 w-12 text-red-500" />
       <h3 className="mb-2 text-lg font-semibold">Failed to load data</h3>
       <p className="mb-4 text-sm text-muted-foreground">
-        {error.message || 'Something went wrong while loading the data.'}
+        {error.message || "Something went wrong while loading the data."}
       </p>
-      <Button onClick={resetError} size="sm" className="flex items-center gap-2">
+      <Button
+        onClick={resetError}
+        size="sm"
+        className="flex items-center gap-2"
+      >
         <RefreshCw className="h-4 w-4" />
         Retry
       </Button>
@@ -247,7 +282,10 @@ function AsyncErrorFallback({ error, resetError }: ErrorFallbackProps) {
   );
 }
 
-export function FormBoundary({ children, ...props }: Omit<ErrorBoundaryProps, 'fallback'>) {
+export function FormBoundary({
+  children,
+  ...props
+}: Omit<ErrorBoundaryProps, "fallback">) {
   return (
     <ErrorBoundary fallback={FormErrorFallback} {...props}>
       {children}
@@ -265,7 +303,7 @@ function FormErrorFallback({ error, resetError }: ErrorFallbackProps) {
         </h4>
       </div>
       <p className="mt-2 text-sm text-red-700 dark:text-red-300">
-        {error.message || 'An error occurred while processing the form.'}
+        {error.message || "An error occurred while processing the form."}
       </p>
       <Button
         onClick={resetError}
@@ -281,22 +319,25 @@ function FormErrorFallback({ error, resetError }: ErrorFallbackProps) {
 
 // Hook for error reporting
 export function useErrorHandler() {
-  const handleError = React.useCallback((error: Error, errorInfo?: ErrorInfo) => {
-    const errorId = `error_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const handleError = React.useCallback(
+    (error: Error, errorInfo?: ErrorInfo) => {
+      const errorId = `error_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    // Log to console
-    console.group(`🚨 Manual Error Report [${errorId}]`);
-    console.error('Error:', error);
-    if (errorInfo) {
-      console.error('Error Info:', errorInfo);
-    }
-    console.groupEnd();
+      // Log error using logger
+      errorLogger.group(`🚨 Manual Error Report [${errorId}]`, () => {
+        errorLogger.error("Manual error report", error, {
+          errorId,
+          errorInfo,
+        });
+      });
 
-    // Here you could send to your error reporting service
-    // Example: Sentry.captureException(error, { extra: errorInfo, tags: { errorId } });
+      // Here you could send to your error reporting service
+      // Example: Sentry.captureException(error, { extra: errorInfo, tags: { errorId } });
 
-    return errorId;
-  }, []);
+      return errorId;
+    },
+    [],
+  );
 
   return { reportError: handleError };
 }

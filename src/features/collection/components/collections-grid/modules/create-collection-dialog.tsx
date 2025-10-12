@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { collectionLogger } from "@/lib/logger";
 import {
   Dialog,
   DialogContent,
@@ -53,7 +54,7 @@ export function CreateCollectionDialog({ open, onOpenChange }: Props) {
       setStep(1);
       onOpenChange(false);
     } catch (e) {
-      console.error(e);
+      collectionLogger.error("Failed to create collection", { error: e });
       setError("Failed to create collection");
     }
   };
