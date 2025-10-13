@@ -6,7 +6,7 @@ pub mod shared;
 use commands::get_all_commands;
 use modules::{
     anime::{
-        application::service::AnimeService,
+        application::{ingestion_service::AnimeIngestionService, service::AnimeService},
         domain::services::anime_relations_service::{AnimeRelationsService, RelationsCache},
         infrastructure::persistence::AnimeRepositoryImpl,
         AnimeRepository,
@@ -15,7 +15,13 @@ use modules::{
         application::service::CollectionService,
         infrastructure::persistence::CollectionRepositoryImpl, CollectionRepository,
     },
-    data_import::application::service::ImportService,
+    data_import::{
+        application::service::ImportService,
+        domain::services::import_components::{
+            data_enhancement_service::DataEnhancementService, validation_service::ValidationService,
+        },
+    },
+    jobs::{infrastructure::JobRepositoryImpl, worker::BackgroundWorker},
     provider::{
         application::service::ProviderService,
         infrastructure::adapters::{CacheAdapter, ProviderRepositoryAdapter},
@@ -181,13 +187,48 @@ pub fn run() {
                 Arc::clone(&provider_service),
             ));
 
-            // Initialize progressive relations service (new architecture)
-            let relations_cache = Arc::new(RelationsCache::new());
-            let anime_relations_service = Arc::new(AnimeRelationsService::new(
-                relations_cache,
-                Some(Arc::clone(&anime_repo)),
+            // Initialize background jobs system
+            let job_repository = Arc::new(JobRepositoryImpl::new(database.pool().clone()));
+
+            // Initialize ingestion service (unified anime creation pipeline)
+            let validation_service = Arc::new(ValidationService::new(
+                Arc::clone(&anime_repo),
                 Arc::clone(&provider_service),
             ));
+            let enhancement_service = Arc::new(DataEnhancementService::new(
+                Arc::clone(&provider_service),
+            ));
+            let ingestion_service = Arc::new(AnimeIngestionService::new(
+                validation_service,
+                enhancement_service,
+                Arc::clone(&anime_service),
+                Arc::clone(&provider_service),
+                job_repository.clone(),
+            ));
+
+            // Initialize progressive relations service (new architecture)
+            let relations_cache = Arc::new(RelationsCache::new());
+            let anime_relations_service = Arc::new(
+                AnimeRelationsService::new(
+                    relations_cache,
+                    Some(Arc::clone(&anime_repo)),
+                    Arc::clone(&provider_service),
+                )
+                .with_ingestion_service(Arc::clone(&ingestion_service))
+            );
+
+            let background_worker = Arc::new(BackgroundWorker::new(
+                job_repository.clone(),
+                Arc::clone(&anime_service),
+                Arc::clone(&provider_service),
+            ));
+
+            // Start background worker
+            let worker_handle = background_worker.clone().start();
+            log::info!("Background worker started for anime enrichment and relations discovery");
+
+            // Store worker handle for graceful shutdown
+            app.manage(worker_handle);
 
             // Manage state so commands can access services via `State<T>`
             app.manage(anime_service);
@@ -195,6 +236,7 @@ pub fn run() {
             app.manage(import_service);
             app.manage(anime_relations_service);
             app.manage(provider_service);
+            app.manage(job_repository);
 
             Ok(())
         })

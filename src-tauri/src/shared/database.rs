@@ -47,6 +47,11 @@ impl Database {
         Ok(Self { pool })
     }
 
+    /// Create a Database instance from an existing pool (useful for testing)
+    pub fn from_pool(pool: DbPool) -> Self {
+        Self { pool }
+    }
+
     /// Validate and retrieve database URL with security measures
     fn get_validated_database_url() -> Result<String, AppError> {
         let database_url = env::var("DATABASE_URL").map_err(|_| {
@@ -122,6 +127,11 @@ impl Database {
             idle_connections: state.idle_connections,
             max_size: self.pool.max_size(),
         }
+    }
+
+    /// Get the underlying connection pool (useful for testing and repository initialization)
+    pub fn pool(&self) -> &DbPool {
+        &self.pool
     }
 }
 

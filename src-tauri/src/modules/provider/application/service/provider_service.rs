@@ -1,5 +1,6 @@
+use crate::modules::anime::domain::entities::anime_detailed::AnimeDetailed;
 use crate::modules::anime::domain::services::data_quality_service::DataQualityService;
-use crate::modules::anime::AnimeDetailed;
+use crate::modules::provider::domain::entities::anime_data::AnimeData;
 use crate::modules::provider::domain::repositories::{
     anime_provider_repo::AnimeProviderRepository, cache_repo::CacheRepository,
 };
@@ -96,6 +97,60 @@ impl ProviderService {
             .get_health(provider)
             .map(|health| !health.should_avoid())
             .unwrap_or(false)
+    }
+
+    // ========================================================================
+    // QUALITY METRICS CALCULATION METHODS
+    // ========================================================================
+
+    /// Get anime data with quality metrics (returns full AnimeData wrapper)
+    ///
+    /// This method returns the complete AnimeData structure including quality
+    /// assessments and source information, unlike get_anime_by_id which only
+    /// returns the AnimeDetailed entity.
+    ///
+    /// Use this when you need access to data quality metrics or when you plan
+    /// to calculate quality metrics afterwards.
+    pub async fn get_anime_data_by_id(
+        &self,
+        id: &str,
+        provider: AnimeProvider,
+    ) -> AppResult<Option<AnimeData>> {
+        let available_providers = self.provider_selection_service.get_available_providers();
+
+        self.anime_search_service
+            .get_details(id, Some(provider), &available_providers)
+            .await
+    }
+
+    /// Calculate and update all quality-related metrics for an anime
+    ///
+    /// This method calculates:
+    /// - composite_score: Weighted score based on multiple factors
+    /// - tier: S/A/B/C/D classification based on composite_score
+    /// - quality_metrics: Detailed metrics (popularity, engagement, consistency, reach)
+    /// - updated_at: Timestamp of the calculation
+    ///
+    /// This delegates to the internal DataQualityService's ScoreCalculator
+    /// to ensure consistent quality assessment across the application.
+    ///
+    /// # Example
+    /// ```rust
+    /// let mut anime = provider_service.get_anime_by_id("123", AnimeProvider::AniList).await?;
+    /// provider_service.calculate_quality_metrics(&mut anime);
+    /// // Now anime.tier, anime.quality_metrics are properly calculated
+    /// ```
+    pub fn calculate_quality_metrics(&self, anime: &mut AnimeDetailed) {
+        anime.composite_score = self
+            .data_quality_service
+            .calculate_anime_composite_score(anime);
+        anime.tier = self
+            .data_quality_service
+            .determine_anime_tier(anime.composite_score);
+        anime.quality_metrics = self
+            .data_quality_service
+            .calculate_anime_quality_metrics(anime);
+        anime.updated_at = chrono::Utc::now();
     }
 
     // ========================================================================

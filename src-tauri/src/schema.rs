@@ -18,6 +18,10 @@ pub mod sql_types {
     pub struct AnimeType;
 
     #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "job_status"))]
+    pub struct JobStatus;
+
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "unified_age_restriction"))]
     pub struct UnifiedAgeRestriction;
 
@@ -109,6 +113,26 @@ diesel::table! {
     anime_studios (anime_id, studio_id) {
         anime_id -> Uuid,
         studio_id -> Uuid,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use super::sql_types::JobStatus;
+
+    background_jobs (id) {
+        id -> Uuid,
+        #[max_length = 50]
+        job_type -> Varchar,
+        payload -> Jsonb,
+        priority -> Int4,
+        status -> JobStatus,
+        attempts -> Int4,
+        max_attempts -> Int4,
+        created_at -> Timestamptz,
+        started_at -> Nullable<Timestamptz>,
+        completed_at -> Nullable<Timestamptz>,
+        error -> Nullable<Text>,
     }
 }
 
@@ -215,6 +239,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     anime_genres,
     anime_relations,
     anime_studios,
+    background_jobs,
     collection_anime,
     collections,
     genres,

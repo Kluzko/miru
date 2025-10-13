@@ -92,15 +92,32 @@ impl ScoreCalculator {
         let weighted_sum: f32 = parts.iter().map(|(v, w)| v * w).sum();
         let weight_sum: f32 = parts.iter().map(|(_, w)| w).sum();
 
-        (weighted_sum / weight_sum * 100.0).round() / 100.0
+        // Calculate weighted average and round to 2 decimal places
+        let composite = (weighted_sum / weight_sum * 100.0).round() / 100.0;
+
+        // Ensure composite score is capped at 10.0 to satisfy database constraint
+        composite.min(10.0).max(0.0)
     }
 
     pub fn calculate_quality_metrics(&self, anime: &dyn Scoreable) -> QualityMetrics {
+        // Cap all metric scores at 10.0 to satisfy database constraints
         QualityMetrics {
-            popularity_score: self.popularity_score(anime).unwrap_or(0.0),
-            engagement_score: self.engagement_score(anime).unwrap_or(0.0),
-            consistency_score: self.consistency_score(anime),
-            audience_reach_score: self.audience_reach_score(anime).unwrap_or(0.0),
+            popularity_score: self
+                .popularity_score(anime)
+                .unwrap_or(0.0)
+                .min(10.0)
+                .max(0.0),
+            engagement_score: self
+                .engagement_score(anime)
+                .unwrap_or(0.0)
+                .min(10.0)
+                .max(0.0),
+            consistency_score: self.consistency_score(anime).min(10.0).max(0.0),
+            audience_reach_score: self
+                .audience_reach_score(anime)
+                .unwrap_or(0.0)
+                .min(10.0)
+                .max(0.0),
         }
     }
 

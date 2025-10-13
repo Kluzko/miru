@@ -248,7 +248,7 @@ impl AnimeSearchService {
                 .search_anime(search_query, 1, provider)
                 .await
             {
-                Ok(mut results) if !results.is_empty() => {
+                Ok(results) if !results.is_empty() => {
                     // Take the first result as it should be most relevant
                     let mut additional_data = results.into_iter().next().unwrap();
                     additional_data.source.providers_used =

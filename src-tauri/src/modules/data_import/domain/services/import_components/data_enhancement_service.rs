@@ -133,7 +133,7 @@ impl DataEnhancementService {
                     }
 
                     // Track provider effectiveness
-                    for (field, provider) in &enhancement_result.provider_sources {
+                    for (_field, provider) in &enhancement_result.provider_sources {
                         provider_effectiveness
                             .entry(provider.clone())
                             .or_insert_with(Vec::new)
@@ -489,11 +489,27 @@ impl DataEnhancementService {
         let consistency_score = self.calculate_consistency_score(anime);
         let field_completeness = self.calculate_field_completeness(anime);
 
+        // Weight freshness and reliability based on actual data quality
+        // Don't give free points just for being "enhanced"
+        let freshness_score = if completeness_score > 0.7 {
+            0.9 // High completeness gets good freshness score
+        } else if completeness_score > 0.4 {
+            0.7 // Medium completeness gets moderate score
+        } else {
+            0.5 // Low completeness - data is incomplete, can't be that "fresh"
+        };
+
+        let source_reliability = if completeness_score > 0.6 {
+            0.8 // Good data suggests reliable source
+        } else {
+            0.5 // Incomplete data suggests less reliable source
+        };
+
         DataQualityMetrics {
             completeness_score,
             consistency_score,
-            freshness_score: 1.0,    // Assume fresh since we just enhanced it
-            source_reliability: 0.8, // Good reliability after enhancement
+            freshness_score,
+            source_reliability,
             field_completeness,
             provider_agreements: HashMap::new(), // Would be filled during aggregation
         }

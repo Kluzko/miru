@@ -18,9 +18,6 @@ pub fn get_all_commands() -> tauri_specta::Commands<tauri::Wry> {
         search_anime_external,
         get_anime_by_external_id,
         get_anime_relations,
-        // Enrichment commands (automatic provider data enhancement)
-        enrich_anime_providers,
-        resync_anime_data,
         // Auto-enrichment commands (background enrichment on loading)
         auto_enrich_on_load,
         // Relations command (single optimized call with auto-discovery)
@@ -65,9 +62,6 @@ macro_rules! generate_handler_list {
             search_anime_external,
             get_anime_by_external_id,
             get_anime_relations,
-            // Enrichment commands (automatic provider data enhancement)
-            enrich_anime_providers,
-            resync_anime_data,
             // Auto-enrichment commands (background enrichment on loading)
             auto_enrich_on_load,
             // Progressive relations commands (simplified to single command)

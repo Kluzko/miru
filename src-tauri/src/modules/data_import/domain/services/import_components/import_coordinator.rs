@@ -103,7 +103,7 @@ impl ImportCoordinator {
             .await?;
 
         // Emit final progress with comprehensive data quality metrics
-        let events_emitted = 1; // Single call for batch processing
+        let _events_emitted = 1; // Single call for batch processing
         progress_tracker.emit_validation_progress(ValidationProgress {
             current: total_titles as u32,
             total: total_titles as u32,

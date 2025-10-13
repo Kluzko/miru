@@ -4,6 +4,9 @@ pub mod domain;
 pub mod infrastructure;
 
 // Re-exports for easy external access
+pub use application::ingestion_service::{
+    AnimeIngestionService, AnimeSource, IngestionOptions, IngestionResult, JobPriority,
+};
 pub use application::service::AnimeService;
 pub use domain::{AnimeDetailed, AnimeRepository};
 

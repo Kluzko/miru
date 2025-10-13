@@ -714,7 +714,7 @@ impl AniListAdapter {
         let franchise_relations: Vec<FranchiseRelation> = all_relations
             .into_iter()
             .filter(|(related_id, _)| *related_id != id) // Exclude self-reference
-            .map(|(id, details)| details)
+            .map(|(_id, details)| details)
             .collect();
 
         log::info!(

@@ -216,6 +216,8 @@ pub struct AnimeRelationsService {
     cache: Arc<RelationsCache>,
     anime_repo: Option<Arc<dyn AnimeRepository>>,
     provider_service: Arc<ProviderService>,
+    ingestion_service:
+        Option<Arc<crate::modules::anime::application::ingestion_service::AnimeIngestionService>>,
 }
 
 impl AnimeRelationsService {
@@ -228,7 +230,18 @@ impl AnimeRelationsService {
             cache,
             anime_repo,
             provider_service,
+            ingestion_service: None,
         }
+    }
+
+    pub fn with_ingestion_service(
+        mut self,
+        ingestion_service: Arc<
+            crate::modules::anime::application::ingestion_service::AnimeIngestionService,
+        >,
+    ) -> Self {
+        self.ingestion_service = Some(ingestion_service);
+        self
     }
 
     /// Check if the service is available
@@ -742,9 +755,8 @@ impl AnimeRelationsService {
             anime_id
         );
 
-        // Create placeholder anime records and rich metadata for each relation
+        // Create placeholder anime records using AnimeIngestionService
         let mut enriched_relations = Vec::new();
-        let mut placeholder_anime = Vec::new();
 
         for rel in &relations_to_save {
             // Check if this anime already exists in our database by AniList ID
@@ -762,133 +774,94 @@ impl AnimeRelationsService {
                     existing.id
                 }
                 _ => {
-                    // Create placeholder anime record with rich metadata from provider
-                    let placeholder_uuid = Uuid::new_v4();
-                    log::debug!(
-                        "Creating placeholder anime {} for external relation {}",
-                        placeholder_uuid,
-                        rel.target_id
-                    );
+                    log::debug!("Creating anime for external relation {}", rel.target_id);
 
-                    // Fetch complete anime data from provider for rich metadata
-                    let placeholder_anime_detailed = match self
-                        .provider_service
-                        .get_anime_by_id(&rel.target_id, AnimeProvider::AniList)
-                        .await
-                    {
-                        Ok(Some(complete_anime)) => {
-                            // Use complete anime data with our generated UUID
-                            crate::modules::anime::domain::entities::anime_detailed::AnimeDetailed {
-                                id: placeholder_uuid,
-                                title: complete_anime.title,
-                                provider_metadata: complete_anime.provider_metadata,
-                                score: complete_anime.score,
-                                rating: complete_anime.rating,
-                                favorites: complete_anime.favorites,
-                                synopsis: complete_anime.synopsis,
-                                description: complete_anime.description,
-                                episodes: complete_anime.episodes,
-                                status: complete_anime.status,
-                                aired: complete_anime.aired,
-                                anime_type: complete_anime.anime_type,
-                                age_restriction: complete_anime.age_restriction,
-                                genres: complete_anime.genres,
-                                studios: complete_anime.studios,
-                                source: complete_anime.source,
-                                duration: complete_anime.duration,
-                                image_url: complete_anime.image_url,
-                                images: complete_anime.images,
-                                banner_image: complete_anime.banner_image,
-                                trailer_url: complete_anime.trailer_url,
-                                composite_score: complete_anime.composite_score,
-                                tier: complete_anime.tier,
-                                quality_metrics: complete_anime.quality_metrics,
-                                created_at: chrono::Utc::now(),
-                                updated_at: chrono::Utc::now(),
-                                last_synced_at: Some(chrono::Utc::now()),
-                            }
-                        }
-                        _ => {
-                            // Fallback to minimal data if provider fetch fails
-                            log::warn!(
-                                "Failed to fetch complete data for relation {}, using minimal placeholder",
-                                rel.target_id
-                            );
+                    // Use AnimeIngestionService if available, otherwise fallback to direct save
+                    if let Some(ref ingestion_service) = self.ingestion_service {
+                        // Use the ingestion pipeline to create anime with proper scoring
+                        let source = crate::modules::anime::application::ingestion_service::AnimeSource::RelationDiscovery {
+                            anilist_id: rel.target_id.parse::<u32>().unwrap_or(0),
+                            relation_type: rel.category.clone(),
+                            source_anime_id: anime_id.to_string(),
+                        };
 
-                            let placeholder_title = crate::modules::anime::domain::value_objects::anime_title::AnimeTitle::new(
-                                rel.title.clone().unwrap_or_else(|| format!("Anime {}", rel.target_id))
-                            );
+                        let options = crate::modules::anime::application::ingestion_service::IngestionOptions {
+                            skip_duplicates: false,
+                            skip_provider_fetch: false,
+                            enrich_async: true,  // Queue enrichment job if quality is low
+                            fetch_relations: false,  // Don't recursively fetch relations
+                            priority: crate::modules::anime::application::ingestion_service::JobPriority::Low,
+                        };
 
-                            let placeholder_metadata =
-                                crate::modules::provider::ProviderMetadata::new(
-                                    AnimeProvider::AniList,
-                                    rel.target_id.clone(),
+                        match ingestion_service.ingest_anime(source, options).await {
+                            Ok(result) => {
+                                log::info!(
+                                    "Created anime {} (tier: {:?}, score: {:.2}) for relation {}",
+                                    result.anime.id,
+                                    result.anime.tier,
+                                    result.anime.composite_score,
+                                    rel.target_id
                                 );
-
-                            crate::modules::anime::domain::entities::anime_detailed::AnimeDetailed {
-                                id: placeholder_uuid,
-                                title: placeholder_title,
-                                provider_metadata: placeholder_metadata,
-                                score: None,
-                                rating: None,
-                                favorites: None,
-                                synopsis: None,
-                                description: None,
-                                episodes: None,
-                                status: crate::modules::anime::domain::value_objects::anime_status::AnimeStatus::Unknown,
-                                aired: crate::modules::anime::domain::entities::anime_detailed::AiredDates {
-                                    from: None,
-                                    to: None,
-                                },
-                                anime_type: crate::modules::anime::domain::value_objects::anime_type::AnimeType::Unknown,
-                                age_restriction: None,
-                                genres: Vec::new(),
-                                studios: Vec::new(),
-                                source: None,
-                                duration: None,
-                                image_url: None,
-                                images: None,
-                                banner_image: None,
-                                trailer_url: None,
-                                composite_score: 0.0,
-                                tier: crate::modules::anime::domain::value_objects::anime_tier::AnimeTier::C,
-                                quality_metrics: Default::default(),
-                                created_at: chrono::Utc::now(),
-                                updated_at: chrono::Utc::now(),
-                                last_synced_at: None,
+                                result.anime.id
+                            }
+                            Err(e) => {
+                                log::error!(
+                                    "Failed to ingest anime for relation {}: {}",
+                                    rel.target_id,
+                                    e
+                                );
+                                continue; // Skip this relation if ingestion fails
                             }
                         }
-                    };
+                    } else {
+                        // Fallback: direct repository save (legacy behavior)
+                        log::warn!("AnimeIngestionService not available, using direct repository save for {}", rel.target_id);
 
-                    placeholder_anime.push(placeholder_anime_detailed);
-                    placeholder_uuid
+                        let placeholder_uuid = Uuid::new_v4();
+                        let placeholder_anime_detailed = match self
+                            .provider_service
+                            .get_anime_by_id(&rel.target_id, AnimeProvider::AniList)
+                            .await
+                        {
+                            Ok(Some(complete_anime)) => {
+                                let mut anime_with_metadata = complete_anime;
+                                anime_with_metadata.id = placeholder_uuid;
+                                self.provider_service
+                                    .calculate_quality_metrics(&mut anime_with_metadata);
+                                anime_with_metadata
+                            }
+                            _ => {
+                                log::warn!(
+                                    "Failed to fetch data for relation {}, skipping",
+                                    rel.target_id
+                                );
+                                continue;
+                            }
+                        };
+
+                        match repo.save(&placeholder_anime_detailed).await {
+                            Ok(_) => {
+                                log::info!(
+                                    "Created anime {} for relation {} (legacy mode)",
+                                    placeholder_uuid,
+                                    rel.target_id
+                                );
+                                placeholder_uuid
+                            }
+                            Err(e) => {
+                                log::error!(
+                                    "Failed to save anime for relation {}: {}",
+                                    rel.target_id,
+                                    e
+                                );
+                                continue;
+                            }
+                        }
+                    }
                 }
             };
 
-            // With the new simplified approach, we just need anime_id and relation_type
-            // All the metadata is now stored as complete anime records
-            // Use semantic category (mainStory, movie, etc.) for absolute franchise categorization
             enriched_relations.push((storage_uuid, rel.category.clone()));
-        }
-
-        // First, save placeholder anime records if any
-        if !placeholder_anime.is_empty() {
-            log::info!(
-                "Creating {} placeholder anime records for external relations",
-                placeholder_anime.len()
-            );
-            match repo.save_batch(&placeholder_anime).await {
-                Ok(_) => {
-                    log::info!(
-                        "Successfully created {} placeholder anime records",
-                        placeholder_anime.len()
-                    );
-                }
-                Err(e) => {
-                    log::error!("Failed to create placeholder anime records: {}", e);
-                    return Ok(None); // Return early if we can't create placeholders
-                }
-            }
         }
 
         // Now save relations - this should work since anime records exist

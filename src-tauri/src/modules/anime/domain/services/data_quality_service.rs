@@ -166,6 +166,27 @@ impl DataQualityService {
 
         provider_scores
     }
+
+    /// Public wrapper to calculate composite score for an anime
+    pub fn calculate_anime_composite_score(&self, anime: &AnimeDetailed) -> f32 {
+        self.score_calculator.calculate_composite_score(anime)
+    }
+
+    /// Public wrapper to calculate quality metrics for an anime
+    pub fn calculate_anime_quality_metrics(
+        &self,
+        anime: &AnimeDetailed,
+    ) -> crate::modules::anime::domain::value_objects::QualityMetrics {
+        self.score_calculator.calculate_quality_metrics(anime)
+    }
+
+    /// Public wrapper to determine tier based on score
+    pub fn determine_anime_tier(
+        &self,
+        score: f32,
+    ) -> crate::modules::anime::domain::value_objects::AnimeTier {
+        self.score_calculator.determine_tier(score)
+    }
 }
 
 impl Default for DataQualityService {

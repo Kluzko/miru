@@ -199,10 +199,6 @@ pub async fn get_anime_relations(
 // ENRICHMENT COMMANDS (Automatic provider data enhancement)
 // ================================================================================================
 
-// Re-export enrichment commands for provider data enhancement
-pub mod enrichment;
-pub use enrichment::*;
-
 // Re-export auto-enrichment commands for automatic background enrichment
 pub mod auto_enrichment;
 pub use auto_enrichment::*;

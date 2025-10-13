@@ -604,7 +604,7 @@ impl ValidationService {
 
         // Process each title with enhanced validation and emit progress events
         for (index, title) in titles.iter().enumerate() {
-            let start_time = std::time::Instant::now();
+            let _start_time = std::time::Instant::now();
 
             // Emit detailed step info for better UX
             if let Some(ref app_handle) = app {
