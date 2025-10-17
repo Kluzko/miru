@@ -9,7 +9,8 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 // json import removed - no longer needed with simplified relations approach
 use specta::Type;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use uuid::Uuid;
 
 /// Basic relation information for instant loading (Stage 1)
@@ -217,7 +218,7 @@ pub struct AnimeRelationsService {
     anime_repo: Option<Arc<dyn AnimeRepository>>,
     provider_service: Arc<ProviderService>,
     ingestion_service:
-        Option<Arc<crate::modules::anime::application::ingestion_service::AnimeIngestionService>>,
+        Arc<crate::modules::anime::application::ingestion_service::AnimeIngestionService>,
 }
 
 impl AnimeRelationsService {
@@ -225,23 +226,16 @@ impl AnimeRelationsService {
         cache: Arc<RelationsCache>,
         anime_repo: Option<Arc<dyn AnimeRepository>>,
         provider_service: Arc<ProviderService>,
+        ingestion_service: Arc<
+            crate::modules::anime::application::ingestion_service::AnimeIngestionService,
+        >,
     ) -> Self {
         Self {
             cache,
             anime_repo,
             provider_service,
-            ingestion_service: None,
+            ingestion_service,
         }
-    }
-
-    pub fn with_ingestion_service(
-        mut self,
-        ingestion_service: Arc<
-            crate::modules::anime::application::ingestion_service::AnimeIngestionService,
-        >,
-    ) -> Self {
-        self.ingestion_service = Some(ingestion_service);
-        self
     }
 
     /// Check if the service is available
@@ -756,113 +750,93 @@ impl AnimeRelationsService {
         );
 
         // Create placeholder anime records using AnimeIngestionService
-        let mut enriched_relations = Vec::new();
+        // Process in parallel with concurrency limit to respect rate limits
+        use futures::stream::{self, StreamExt};
 
-        for rel in &relations_to_save {
-            // Check if this anime already exists in our database by AniList ID
-            let existing_anime = repo
-                .find_by_external_id(&AnimeProvider::AniList, &rel.target_id)
-                .await;
+        log::info!(
+            "Processing {} related anime in parallel (concurrency limit: 3)",
+            relations_to_save.len()
+        );
 
-            let storage_uuid = match existing_anime {
-                Ok(Some(existing)) => {
-                    log::debug!(
-                        "Using existing anime {} for relation {}",
-                        existing.id,
-                        rel.target_id
-                    );
-                    existing.id
-                }
-                _ => {
-                    log::debug!("Creating anime for external relation {}", rel.target_id);
+        let ingestion_service = Arc::clone(&self.ingestion_service);
+        let repo_clone = Arc::clone(repo);
+        let anime_id_str = anime_id.to_string(); // Clone anime_id once for all closures
 
-                    // Use AnimeIngestionService if available, otherwise fallback to direct save
-                    if let Some(ref ingestion_service) = self.ingestion_service {
-                        // Use the ingestion pipeline to create anime with proper scoring
-                        let source = crate::modules::anime::application::ingestion_service::AnimeSource::RelationDiscovery {
-                            anilist_id: rel.target_id.parse::<u32>().unwrap_or(0),
-                            relation_type: rel.category.clone(),
-                            source_anime_id: anime_id.to_string(),
-                        };
+        let enriched_relations: Vec<(Uuid, String)> = stream::iter(relations_to_save.clone())
+            .map(move |rel| {
+                let ingestion_service = Arc::clone(&ingestion_service);
+                let repo = Arc::clone(&repo_clone);
+                let anime_id_owned = anime_id_str.clone();
 
-                        let options = crate::modules::anime::application::ingestion_service::IngestionOptions {
-                            skip_duplicates: false,
-                            skip_provider_fetch: false,
-                            enrich_async: true,  // Queue enrichment job if quality is low
-                            fetch_relations: false,  // Don't recursively fetch relations
-                            priority: crate::modules::anime::application::ingestion_service::JobPriority::Low,
-                        };
+                async move {
+                    // Check if this anime already exists in our database by AniList ID
+                    let existing_anime = repo
+                        .find_by_external_id(&AnimeProvider::AniList, &rel.target_id)
+                        .await;
 
-                        match ingestion_service.ingest_anime(source, options).await {
-                            Ok(result) => {
-                                log::info!(
-                                    "Created anime {} (tier: {:?}, score: {:.2}) for relation {}",
-                                    result.anime.id,
-                                    result.anime.tier,
-                                    result.anime.composite_score,
-                                    rel.target_id
-                                );
-                                result.anime.id
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "Failed to ingest anime for relation {}: {}",
-                                    rel.target_id,
-                                    e
-                                );
-                                continue; // Skip this relation if ingestion fails
+                    let storage_uuid = match existing_anime {
+                        Ok(Some(existing)) => {
+                            log::debug!(
+                                "Using existing anime {} for relation {}",
+                                existing.id,
+                                rel.target_id
+                            );
+                            Some(existing.id)
+                        }
+                        _ => {
+                            log::debug!("Creating anime for external relation {}", rel.target_id);
+
+                            // Use the unified ingestion pipeline to create anime with proper scoring
+                            let source = crate::modules::anime::application::ingestion_service::AnimeSource::RelationDiscovery {
+                                anilist_id: rel.target_id.parse::<u32>().unwrap_or(0),
+                                relation_type: rel.category.clone(),
+                                source_anime_id: anime_id_owned,
+                            };
+
+                            let options = crate::modules::anime::application::ingestion_service::IngestionOptions {
+                                skip_duplicates: false,
+                                skip_provider_fetch: false,
+                                enrich_async: true,  // Queue enrichment job if quality is low
+                                fetch_relations: false,  // Don't recursively fetch relations
+                                priority: crate::modules::anime::application::ingestion_service::JobPriority::Low,
+                            };
+
+                            match ingestion_service.ingest_anime(source, options).await {
+                                Ok(result) => {
+                                    log::info!(
+                                        "Created anime {} (tier: {:?}, score: {:.2}) for relation {}",
+                                        result.anime.id,
+                                        result.anime.tier,
+                                        result.anime.composite_score,
+                                        rel.target_id
+                                    );
+                                    Some(result.anime.id)
+                                }
+                                Err(e) => {
+                                    log::error!(
+                                        "Failed to ingest anime for relation {}: {}",
+                                        rel.target_id,
+                                        e
+                                    );
+                                    None // Skip this relation if ingestion fails
+                                }
                             }
                         }
-                    } else {
-                        // Fallback: direct repository save (legacy behavior)
-                        log::warn!("AnimeIngestionService not available, using direct repository save for {}", rel.target_id);
+                    };
 
-                        let placeholder_uuid = Uuid::new_v4();
-                        let placeholder_anime_detailed = match self
-                            .provider_service
-                            .get_anime_by_id(&rel.target_id, AnimeProvider::AniList)
-                            .await
-                        {
-                            Ok(Some(complete_anime)) => {
-                                let mut anime_with_metadata = complete_anime;
-                                anime_with_metadata.id = placeholder_uuid;
-                                self.provider_service
-                                    .calculate_quality_metrics(&mut anime_with_metadata);
-                                anime_with_metadata
-                            }
-                            _ => {
-                                log::warn!(
-                                    "Failed to fetch data for relation {}, skipping",
-                                    rel.target_id
-                                );
-                                continue;
-                            }
-                        };
-
-                        match repo.save(&placeholder_anime_detailed).await {
-                            Ok(_) => {
-                                log::info!(
-                                    "Created anime {} for relation {} (legacy mode)",
-                                    placeholder_uuid,
-                                    rel.target_id
-                                );
-                                placeholder_uuid
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "Failed to save anime for relation {}: {}",
-                                    rel.target_id,
-                                    e
-                                );
-                                continue;
-                            }
-                        }
-                    }
+                    storage_uuid.map(|uuid| (uuid, rel.category.clone()))
                 }
-            };
+            })
+            .buffer_unordered(3) // Process 3 anime concurrently (respects rate limits)
+            .filter_map(|result| async move { result })
+            .collect()
+            .await;
 
-            enriched_relations.push((storage_uuid, rel.category.clone()));
-        }
+        log::info!(
+            "Successfully processed {}/{} related anime",
+            enriched_relations.len(),
+            relations_to_save.len()
+        );
 
         // Now save relations - this should work since anime records exist
         if let Err(e) = repo.save_relations(&anime_uuid, &enriched_relations).await {
@@ -1124,53 +1098,162 @@ impl AnimeRelationsService {
 }
 
 /// Cache service for relations data
+/// In-memory cache for relations data with TTL (Time-To-Live)
+///
+/// Cache strategy:
+/// - Basic relations: 1 hour TTL (fast, frequently accessed)
+/// - Detailed relations: 6 hours TTL (richer data, less volatile)
+/// - Franchise discovery: 24 hours TTL (expensive operation, rarely changes)
 pub struct RelationsCache {
-    // TODO: Implement actual caching mechanism
-    // For now, this is a placeholder
+    basic: RwLock<HashMap<String, (BasicRelations, DateTime<Utc>)>>,
+    detailed: RwLock<HashMap<String, (DetailedRelations, DateTime<Utc>)>>,
+    franchise: RwLock<HashMap<String, (FranchiseDiscovery, DateTime<Utc>)>>,
 }
 
 impl RelationsCache {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            basic: RwLock::new(HashMap::new()),
+            detailed: RwLock::new(HashMap::new()),
+            franchise: RwLock::new(HashMap::new()),
+        }
     }
 
-    pub async fn get_basic(&self, _anime_id: &str) -> Option<BasicRelations> {
-        // TODO: Implement cache retrieval
+    /// Get basic relations from cache if fresh (TTL: 1 hour)
+    pub async fn get_basic(&self, anime_id: &str) -> Option<BasicRelations> {
+        let cache = self.basic.read().ok()?;
+        if let Some((relations, timestamp)) = cache.get(anime_id) {
+            // Check if cache is still fresh (1 hour TTL)
+            if Utc::now().signed_duration_since(*timestamp) < Duration::hours(1) {
+                log::debug!("Cache HIT for basic relations: {}", anime_id);
+                return Some(relations.clone());
+            } else {
+                log::debug!("Cache EXPIRED for basic relations: {}", anime_id);
+            }
+        } else {
+            log::debug!("Cache MISS for basic relations: {}", anime_id);
+        }
         None
     }
 
-    pub async fn store_basic(&self, _basic: &BasicRelations) -> AppResult<()> {
-        // TODO: Implement cache storage
+    /// Store basic relations in cache with current timestamp
+    pub async fn store_basic(&self, basic: &BasicRelations) -> AppResult<()> {
+        let mut cache = self.basic.write().map_err(|e| {
+            AppError::InternalError(format!(
+                "Failed to acquire write lock for basic cache: {}",
+                e
+            ))
+        })?;
+        cache.insert(basic.anime_id.clone(), (basic.clone(), Utc::now()));
+        log::debug!("Cached basic relations for: {}", basic.anime_id);
         Ok(())
     }
 
-    pub async fn get_detailed(&self, _anime_id: &str) -> Option<DetailedRelations> {
-        // TODO: Implement cache retrieval
+    /// Get detailed relations from cache if fresh (TTL: 6 hours)
+    pub async fn get_detailed(&self, anime_id: &str) -> Option<DetailedRelations> {
+        let cache = self.detailed.read().ok()?;
+        if let Some((relations, timestamp)) = cache.get(anime_id) {
+            // Check if cache is still fresh (6 hours TTL)
+            if Utc::now().signed_duration_since(*timestamp) < Duration::hours(6) {
+                log::debug!("Cache HIT for detailed relations: {}", anime_id);
+                return Some(relations.clone());
+            } else {
+                log::debug!("Cache EXPIRED for detailed relations: {}", anime_id);
+            }
+        } else {
+            log::debug!("Cache MISS for detailed relations: {}", anime_id);
+        }
         None
     }
 
+    /// Store detailed relations in cache with current timestamp
     pub async fn store_detailed(
         &self,
-        _anime_id: &str,
-        _detailed: &DetailedRelations,
+        anime_id: &str,
+        detailed: &DetailedRelations,
     ) -> AppResult<()> {
-        // TODO: Implement cache storage
+        let mut cache = self.detailed.write().map_err(|e| {
+            AppError::InternalError(format!(
+                "Failed to acquire write lock for detailed cache: {}",
+                e
+            ))
+        })?;
+        cache.insert(anime_id.to_string(), (detailed.clone(), Utc::now()));
+        log::debug!("Cached detailed relations for: {}", anime_id);
         Ok(())
     }
 
-    pub async fn get_franchise(&self, _anime_id: &str) -> Option<FranchiseDiscovery> {
-        // TODO: Implement cache retrieval
+    /// Get franchise discovery from cache if fresh (TTL: 24 hours)
+    pub async fn get_franchise(&self, anime_id: &str) -> Option<FranchiseDiscovery> {
+        let cache = self.franchise.read().ok()?;
+        if let Some((discovery, timestamp)) = cache.get(anime_id) {
+            // Check if cache is still fresh (24 hours TTL)
+            if Utc::now().signed_duration_since(*timestamp) < Duration::hours(24) {
+                log::debug!("Cache HIT for franchise discovery: {}", anime_id);
+                return Some(discovery.clone());
+            } else {
+                log::debug!("Cache EXPIRED for franchise discovery: {}", anime_id);
+            }
+        } else {
+            log::debug!("Cache MISS for franchise discovery: {}", anime_id);
+        }
         None
     }
 
+    /// Store franchise discovery in cache with current timestamp
     pub async fn store_franchise(
         &self,
-        _anime_id: &str,
-        _discovery: &FranchiseDiscovery,
+        anime_id: &str,
+        discovery: &FranchiseDiscovery,
     ) -> AppResult<()> {
-        // TODO: Implement cache storage
+        let mut cache = self.franchise.write().map_err(|e| {
+            AppError::InternalError(format!(
+                "Failed to acquire write lock for franchise cache: {}",
+                e
+            ))
+        })?;
+        cache.insert(anime_id.to_string(), (discovery.clone(), Utc::now()));
+        log::debug!("Cached franchise discovery for: {}", anime_id);
         Ok(())
     }
+
+    /// Clear all caches (useful for testing or manual refresh)
+    pub async fn clear_all(&self) -> AppResult<()> {
+        if let Ok(mut cache) = self.basic.write() {
+            cache.clear();
+        }
+        if let Ok(mut cache) = self.detailed.write() {
+            cache.clear();
+        }
+        if let Ok(mut cache) = self.franchise.write() {
+            cache.clear();
+        }
+        log::info!("Cleared all relation caches");
+        Ok(())
+    }
+
+    /// Get cache statistics for monitoring
+    pub async fn get_stats(&self) -> CacheStats {
+        let basic_size = self.basic.read().map(|c| c.len()).unwrap_or(0);
+        let detailed_size = self.detailed.read().map(|c| c.len()).unwrap_or(0);
+        let franchise_size = self.franchise.read().map(|c| c.len()).unwrap_or(0);
+
+        CacheStats {
+            basic_entries: basic_size,
+            detailed_entries: detailed_size,
+            franchise_entries: franchise_size,
+            total_entries: basic_size + detailed_size + franchise_size,
+        }
+    }
+}
+
+/// Cache statistics for monitoring
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheStats {
+    pub basic_entries: usize,
+    pub detailed_entries: usize,
+    pub franchise_entries: usize,
+    pub total_entries: usize,
 }
 
 impl BasicRelations {

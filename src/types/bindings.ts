@@ -62,35 +62,6 @@ async getAnimeRelations(request: GetRelationsRequest) : Promise<Result<AnimeDeta
 }
 },
 /**
- * Automatically enrich anime with missing provider data
- * 
- * This command uses existing provider IDs to search for and add missing provider data.
- * For example, if anime has only Jikan ID, it will search AniList using the title
- * and other metadata to find the corresponding AniList entry.
- */
-async enrichAnimeProviders(request: EnrichAnimeRequest) : Promise<Result<EnrichmentResult, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("enrich_anime_providers", { request }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Re-sync anime data from all available providers
- * 
- * This command refreshes anime data from all providers where we have IDs,
- * ensuring the local data is up-to-date with the latest information.
- */
-async resyncAnimeData(request: ResyncAnimeRequest) : Promise<Result<ResyncResult, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("resync_anime_data", { request }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * Automatically enrich anime data when loading anime details
  * 
  * This command runs automatically when an anime detail page loads.
@@ -394,8 +365,6 @@ export type EnhancedValidatedAnime = { input_title: string; anime_data: AnimeDet
  * Enhanced validation result with comprehensive data analysis
  */
 export type EnhancedValidationResult = { found: EnhancedValidatedAnime[]; not_found: ImportError[]; already_exists: ExistingAnime[]; total: number; average_confidence: number; data_quality_summary: DataQualitySummary; validation_duration_ms: number }
-export type EnrichAnimeRequest = { animeId: string }
-export type EnrichmentResult = { animeId: string; providersAdded: string[]; providersUpdated: string[]; errors: string[]; success: boolean }
 export type ExistingAnime = { input_title: string; matched_title: string; matched_field: string; anime: AnimeDetailed }
 /**
  * Detailed franchise relation information for testing and verification
@@ -445,8 +414,6 @@ export type QualityMetrics = { popularityScore: number; engagementScore: number;
  */
 export type RelationshipCapabilities = { supported_provider: AnimeProvider; reasons_for_exclusivity: string[]; performance_comparison: PerformanceComparison }
 export type RemoveAnimeFromCollectionRequest = { collection_id: string; anime_id: string }
-export type ResyncAnimeRequest = { animeId: string; forceRefresh: boolean | null }
-export type ResyncResult = { animeId: string; providersSynced: string[]; dataUpdated: boolean; errors: string[]; success: boolean }
 export type SearchAnimeExternalRequest = { query: string; limit: number | null }
 export type SearchAnimeRequest = { query: string }
 export type SkippedAnime = { title: string; external_id: string; provider: AnimeProvider; reason: string }

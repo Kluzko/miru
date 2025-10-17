@@ -30,6 +30,33 @@ use crate::shared::{
 };
 // JsonValue import removed - no longer needed with simplified relations approach
 
+/// Helper function to get the inverse relation type for bidirectional relations
+fn inverse_relation_type(relation_type: &str) -> String {
+    match relation_type.to_lowercase().as_str() {
+        // Semantic categories (symmetric or have clear inverses)
+        "mainstory" => "mainstory".to_string(),
+        "sidestory" => "mainstory".to_string(),
+        "movie" | "movies" => "mainstory".to_string(),
+        "ova" | "ovaspecial" | "ova_special" => "mainstory".to_string(),
+
+        // AniList relation types (have clear inverses)
+        "sequel" => "prequel".to_string(),
+        "prequel" => "sequel".to_string(),
+        "side_story" => "parent_story".to_string(),
+        "parent_story" => "side_story".to_string(),
+        "spin_off" => "parent_story".to_string(),
+        "alternative" => "alternative".to_string(),
+        "summary" => "full_story".to_string(),
+        "full_story" => "summary".to_string(),
+        "special" => "parent_story".to_string(),
+        "same_setting" => "same_setting".to_string(),
+        "shared_character" => "shared_character".to_string(),
+
+        // Default
+        _ => "other".to_string(),
+    }
+}
+
 pub struct AnimeRepositoryImpl {
     db: Arc<Database>,
 }
@@ -919,7 +946,7 @@ impl AnimeRepository for AnimeRepositoryImpl {
                     match result {
                         Ok(rows_affected) => {
                             log_debug!(
-                                "Successfully saved relation {}/{}: {} rows affected",
+                                "Successfully saved FORWARD relation {}/{}: {} rows affected",
                                 index + 1,
                                 relations_data.len(),
                                 rows_affected
@@ -927,7 +954,74 @@ impl AnimeRepository for AnimeRepositoryImpl {
                         }
                         Err(e) => {
                             log_error!(
-                                "Failed to save relation {}/{}: {}",
+                                "Failed to save forward relation {}/{}: {}",
+                                index + 1,
+                                relations_data.len(),
+                                e
+                            );
+                            return Err(AppError::DatabaseError(e.to_string()));
+                        }
+                    }
+
+                    // Insert REVERSE relation (B → A) for bidirectional navigation
+                    let inverse_type_str = inverse_relation_type(relation_type);
+                    let inverse_type_enum = match inverse_type_str.to_lowercase().as_str() {
+                        "mainstory" => AnimeRelationType::MainStory,
+                        "sidestory" => AnimeRelationType::SideStory,
+                        "movie" | "movies" => AnimeRelationType::Movies,
+                        "ova" | "ovaspecial" | "ova_special" => AnimeRelationType::OvaSpecial,
+                        "sequel" => AnimeRelationType::Sequel,
+                        "prequel" => AnimeRelationType::Prequel,
+                        "side_story" => AnimeRelationType::SideStory,
+                        "spin_off" => AnimeRelationType::SpinOff,
+                        "alternative" => AnimeRelationType::Alternative,
+                        "summary" => AnimeRelationType::Summary,
+                        "special" => AnimeRelationType::Special,
+                        "parent_story" => AnimeRelationType::ParentStory,
+                        "full_story" => AnimeRelationType::FullStory,
+                        "same_setting" => AnimeRelationType::SameSetting,
+                        "shared_character" => AnimeRelationType::SharedCharacter,
+                        _ => AnimeRelationType::Other,
+                    };
+
+                    log_debug!(
+                        "Attempting to insert/update REVERSE relation: {} -> {} ({})",
+                        related_id,
+                        anime_id,
+                        inverse_type_enum
+                    );
+
+                    let reverse_result = diesel::insert_into(anime_relations::table)
+                        .values((
+                            anime_relations::anime_id.eq(*related_id),
+                            anime_relations::related_anime_id.eq(anime_id),
+                            anime_relations::relation_type.eq(inverse_type_enum),
+                            anime_relations::synced_at.eq(Utc::now()),
+                        ))
+                        .on_conflict((
+                            anime_relations::anime_id,
+                            anime_relations::related_anime_id,
+                            anime_relations::relation_type,
+                        ))
+                        .do_update()
+                        .set((
+                            anime_relations::relation_type.eq(inverse_type_enum),
+                            anime_relations::synced_at.eq(Utc::now()),
+                        ))
+                        .execute(conn);
+
+                    match reverse_result {
+                        Ok(rows_affected) => {
+                            log_debug!(
+                                "Successfully saved REVERSE relation {}/{}: {} rows affected",
+                                index + 1,
+                                relations_data.len(),
+                                rows_affected
+                            );
+                        }
+                        Err(e) => {
+                            log_error!(
+                                "Failed to save reverse relation {}/{}: {}",
                                 index + 1,
                                 relations_data.len(),
                                 e

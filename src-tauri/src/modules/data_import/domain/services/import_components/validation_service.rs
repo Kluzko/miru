@@ -818,58 +818,6 @@ impl ValidationService {
             .map(|(field, _)| field)
             .collect()
     }
-
-    /// Calculate data quality summary from validation results
-    fn calculate_data_quality_summary(
-        &self,
-        found: &[EnhancedValidatedAnime],
-    ) -> DataQualitySummary {
-        if found.is_empty() {
-            return DataQualitySummary {
-                average_completeness: 0.0,
-                average_consistency: 0.0,
-                total_providers_used: 0,
-                most_reliable_provider: None,
-                fields_with_gaps: Vec::new(),
-            };
-        }
-
-        let total_completeness: f32 = found
-            .iter()
-            .map(|anime| anime.data_quality.completeness_score)
-            .sum();
-        let total_consistency: f32 = found
-            .iter()
-            .map(|anime| anime.data_quality.consistency_score)
-            .sum();
-
-        let average_completeness = total_completeness / found.len() as f32;
-        let average_consistency = total_consistency / found.len() as f32;
-
-        // Get all providers used
-        let mut all_providers_used = std::collections::HashSet::new();
-        for anime in found {
-            for provider in &anime.provider_sources {
-                all_providers_used.insert(provider.clone());
-            }
-        }
-
-        // Find most reliable provider (one with highest average quality)
-        let most_reliable_provider =
-            if all_providers_used.contains(&crate::modules::provider::AnimeProvider::Jikan) {
-                Some(crate::modules::provider::AnimeProvider::Jikan)
-            } else {
-                all_providers_used.iter().next().cloned()
-            };
-
-        DataQualitySummary {
-            average_completeness,
-            average_consistency,
-            total_providers_used: all_providers_used.len() as u32,
-            most_reliable_provider,
-            fields_with_gaps: self.identify_common_gaps(found),
-        }
-    }
 }
 
 /// Result type for single validation operations

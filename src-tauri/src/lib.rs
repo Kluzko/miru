@@ -213,14 +213,15 @@ pub fn run() {
                     relations_cache,
                     Some(Arc::clone(&anime_repo)),
                     Arc::clone(&provider_service),
+                    Arc::clone(&ingestion_service),
                 )
-                .with_ingestion_service(Arc::clone(&ingestion_service))
             );
 
             let background_worker = Arc::new(BackgroundWorker::new(
                 job_repository.clone(),
                 Arc::clone(&anime_service),
                 Arc::clone(&provider_service),
+                Arc::clone(&anime_relations_service),
             ));
 
             // Start background worker

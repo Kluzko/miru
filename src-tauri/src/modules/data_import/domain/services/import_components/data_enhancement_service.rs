@@ -59,10 +59,26 @@ impl DataEnhancementService {
         // Identify fields that need enhancement based on quality metrics
         let gaps = self.identify_data_gaps(anime, quality_metrics);
 
+        // Log identified gaps for debugging
+        if !gaps.is_empty() {
+            log::info!(
+                "Enhancement gaps identified for '{}': {:?}",
+                anime.title.main,
+                gaps
+            );
+        }
+
         // Simple gap filling approach
         if !gaps.is_empty() && !skip_provider_fetch {
+            log::info!(
+                "Fetching from providers to fill {} gaps for '{}'",
+                gaps.len(),
+                anime.title.main
+            );
             let search_query = &anime.title.main;
-            if let Ok(provider_results) = self.provider_service.search_anime(search_query, 3).await
+
+            // First try: Search all providers to find best match
+            if let Ok(provider_results) = self.provider_service.search_anime(search_query, 5).await
             {
                 if let Some(best_match) = self.find_best_match(anime, &provider_results) {
                     self.fill_data_gaps(
@@ -72,6 +88,38 @@ impl DataEnhancementService {
                         &mut improvements_made,
                         &mut provider_sources,
                     );
+                }
+            }
+
+            // Special case: If age_restriction is still missing, try to get it from any available provider
+            // This is important because AniList doesn't provide age_restriction, so we need to check other providers
+            if enhanced_anime.age_restriction.is_none()
+                && gaps.iter().any(|g| g == "age_restriction")
+            {
+                log::info!(
+                    "Age restriction still missing for '{}', searching providers again specifically for this field",
+                    anime.title.main
+                );
+
+                // Search again and check ALL results (not just best match) for age_restriction
+                if let Ok(provider_results) =
+                    self.provider_service.search_anime(search_query, 5).await
+                {
+                    for result in provider_results.iter() {
+                        if result.age_restriction.is_some() {
+                            enhanced_anime.age_restriction = result.age_restriction.clone();
+                            improvements_made.push("Added age restriction rating".to_string());
+                            let provider_name =
+                                format!("{:?}", result.provider_metadata.primary_provider);
+                            provider_sources.insert("age_restriction".to_string(), provider_name);
+                            log::info!(
+                                "Found age_restriction for '{}': {:?}",
+                                anime.title.main,
+                                enhanced_anime.age_restriction
+                            );
+                            break;
+                        }
+                    }
                 }
             }
         } else if skip_provider_fetch && !gaps.is_empty() {
@@ -258,13 +306,21 @@ impl DataEnhancementService {
             gaps.push("images".to_string());
         }
 
+        // Critical fields that should ALWAYS trigger enrichment if missing
+        // These are fields that certain providers never provide (e.g., AniList doesn't provide age_restriction)
+        const CRITICAL_GAPS: &[&str] = &["age_restriction"];
+
         // Only include gaps where quality metrics indicate improvement needed
+        // OR if the gap is a critical field that's missing
         gaps.into_iter()
             .filter(|gap| {
-                !quality_metrics
-                    .field_completeness
-                    .get(gap)
-                    .unwrap_or(&false)
+                // Always include critical gaps (like age_restriction)
+                CRITICAL_GAPS.contains(&gap.as_str())
+                    // Or include if field is incomplete or overall quality is low
+                    || !quality_metrics
+                        .field_completeness
+                        .get(gap)
+                        .unwrap_or(&false)
                     || quality_metrics.completeness_score < 0.8
             })
             .collect()

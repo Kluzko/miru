@@ -13,12 +13,12 @@ use miru_lib::modules::anime::application::ingestion_service::{
 };
 use miru_lib::modules::anime::domain::value_objects::anime_tier::AnimeTier;
 use miru_lib::modules::jobs::domain::repository::JobRepository;
-use utils::{db, factories::AnimeFactory, helpers};
+use utils::{factories::AnimeFactory, helpers};
 
 #[tokio::test]
 async fn minimal_data_gets_low_tier() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let anime = AnimeFactory::minimal().build();
@@ -51,8 +51,8 @@ async fn minimal_data_gets_low_tier() {
 
 #[tokio::test]
 async fn complete_data_gets_high_tier() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let anime = AnimeFactory::complete().build();
@@ -88,8 +88,8 @@ async fn complete_data_gets_high_tier() {
 
 #[tokio::test]
 async fn relation_discovery_calculates_tier_not_hardcoded() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     // This is the KEY test - relation discovery should NOT hardcode tier to C
@@ -138,8 +138,8 @@ async fn relation_discovery_calculates_tier_not_hardcoded() {
 
 #[tokio::test]
 async fn low_quality_anime_queues_enrichment() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let anime = AnimeFactory::minimal().build();
@@ -177,8 +177,8 @@ async fn low_quality_anime_queues_enrichment() {
 
 #[tokio::test]
 async fn high_quality_anime_skips_enrichment() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let anime = AnimeFactory::complete().build();
@@ -216,8 +216,8 @@ async fn high_quality_anime_skips_enrichment() {
 
 #[tokio::test]
 async fn duplicate_anime_not_recreated() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let anime = AnimeFactory::minimal().with_anilist_id(12345).build();
@@ -271,8 +271,8 @@ async fn duplicate_anime_not_recreated() {
 
 #[tokio::test]
 async fn manual_import_creates_anime_with_proper_tier() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     // Simulate user manually importing "Attack on Titan"
@@ -327,8 +327,8 @@ async fn manual_import_creates_anime_with_proper_tier() {
 
 #[tokio::test]
 async fn ingestion_pipeline_executes_all_stages() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let anime = AnimeFactory::minimal()

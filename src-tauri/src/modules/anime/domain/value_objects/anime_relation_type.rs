@@ -45,6 +45,28 @@ pub enum AnimeRelationType {
 }
 
 impl AnimeRelationType {
+    /// Get the database representation (matches the enum values in PostgreSQL)
+    pub fn db_value(&self) -> &'static str {
+        match self {
+            AnimeRelationType::Sequel => "sequel",
+            AnimeRelationType::Prequel => "prequel",
+            AnimeRelationType::SideStory => "side_story",
+            AnimeRelationType::SpinOff => "spin_off",
+            AnimeRelationType::Alternative => "alternative",
+            AnimeRelationType::Summary => "summary",
+            AnimeRelationType::Special => "special",
+            AnimeRelationType::Movie => "movie",
+            AnimeRelationType::ParentStory => "parent_story",
+            AnimeRelationType::FullStory => "full_story",
+            AnimeRelationType::SameSetting => "same_setting",
+            AnimeRelationType::SharedCharacter => "shared_character",
+            AnimeRelationType::MainStory => "main_story",
+            AnimeRelationType::Movies => "movies",
+            AnimeRelationType::OvaSpecial => "ova_special",
+            AnimeRelationType::Other => "other",
+        }
+    }
+
     pub fn display_name(&self) -> &'static str {
         match self {
             AnimeRelationType::Sequel => "Sequel",

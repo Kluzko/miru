@@ -1,8 +1,8 @@
 /// Test helper functions and service builders
-use super::db::get_test_db_pool;
 use miru_lib::modules::{
     anime::{
         application::{ingestion_service::AnimeIngestionService, service::AnimeService},
+        domain::services::anime_relations_service::{AnimeRelationsService, RelationsCache},
         infrastructure::persistence::AnimeRepositoryImpl,
         AnimeRepository,
     },
@@ -27,13 +27,19 @@ pub struct TestServices {
 }
 
 /// Build all services needed for integration tests
+/// Uses a new isolated TestDb for each call
 pub fn build_test_services() -> TestServices {
-    let pool = super::db::get_test_db_pool();
-    // Use the singleton test pool instead of creating a new Database
-    let db = Arc::new(Database::from_pool((*pool).clone()));
+    let test_db = super::test_db::TestDb::new();
+    build_test_services_with_pool(test_db.pool())
+}
+
+/// Build all services needed for integration tests using a specific pool
+/// This is useful for isolated test databases
+pub fn build_test_services_with_pool(pool: super::test_db::TestPool) -> TestServices {
+    let db = Arc::new(Database::from_pool(pool.clone()));
 
     let anime_repo: Arc<dyn AnimeRepository> = Arc::new(AnimeRepositoryImpl::new(db.clone()));
-    let job_repo = Arc::new(JobRepositoryImpl::new((*pool).clone()));
+    let job_repo = Arc::new(JobRepositoryImpl::new(pool.clone()));
 
     let provider_repo = Arc::new(ProviderRepositoryAdapter::new());
     let cache_repo = Arc::new(CacheAdapter::new());
@@ -58,10 +64,19 @@ pub fn build_test_services() -> TestServices {
         job_repo.clone(),
     ));
 
+    let relations_cache = Arc::new(RelationsCache::new());
+    let relations_service = Arc::new(AnimeRelationsService::new(
+        relations_cache,
+        Some(anime_repo.clone()),
+        provider_service.clone(),
+        ingestion_service.clone(),
+    ));
+
     let background_worker = Arc::new(BackgroundWorker::new(
         job_repo.clone(),
         anime_service.clone(),
         provider_service.clone(),
+        relations_service.clone(),
     ));
 
     TestServices {

@@ -86,7 +86,9 @@ impl ScoreCalculator {
         }
 
         if parts.is_empty() {
-            return 0.0;
+            // Fallback: if we can't calculate any sub-scores, use the raw score
+            // This ensures that anime with scores but no other data still get proper tiers
+            return anime.score().unwrap_or(0.0).min(10.0).max(0.0);
         }
 
         let weighted_sum: f32 = parts.iter().map(|(v, w)| v * w).sum();

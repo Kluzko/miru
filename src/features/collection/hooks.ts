@@ -143,15 +143,20 @@ export function useAddAnimeToCollection() {
       });
 
       // Cancel outgoing refetches
-      await queryClient.cancelQueries({
-        queryKey: collectionKeys.detail(variables.collection_id),
-      });
-      await queryClient.cancelQueries({
-        queryKey: collectionKeys.anime(variables.collection_id),
-      });
-      await queryClient.cancelQueries({
-        queryKey: collectionKeys.all,
-      });
+      await Promise.all([
+        queryClient.cancelQueries({
+          queryKey: collectionKeys.detail(variables.collection_id),
+          exact: true,
+        }),
+        queryClient.cancelQueries({
+          queryKey: collectionKeys.anime(variables.collection_id),
+          exact: true,
+        }),
+        queryClient.cancelQueries({
+          queryKey: collectionKeys.all,
+          exact: true,
+        }),
+      ]);
 
       // Snapshot previous values for rollback
       const previousCollection = queryClient.getQueryData(
@@ -233,15 +238,20 @@ export function useRemoveAnimeFromCollection() {
       });
 
       // Cancel outgoing refetches
-      await queryClient.cancelQueries({
-        queryKey: collectionKeys.detail(variables.collection_id),
-      });
-      await queryClient.cancelQueries({
-        queryKey: collectionKeys.anime(variables.collection_id),
-      });
-      await queryClient.cancelQueries({
-        queryKey: collectionKeys.all,
-      });
+      await Promise.all([
+        queryClient.cancelQueries({
+          queryKey: collectionKeys.detail(variables.collection_id),
+          exact: true,
+        }),
+        queryClient.cancelQueries({
+          queryKey: collectionKeys.anime(variables.collection_id),
+          exact: true,
+        }),
+        queryClient.cancelQueries({
+          queryKey: collectionKeys.all,
+          exact: true,
+        }),
+      ]);
 
       // Snapshot previous values
       const previousCollection = queryClient.getQueryData(
@@ -421,12 +431,16 @@ export function useAddMultipleAnimeToCollection() {
     },
     onMutate: async (variables) => {
       // Cancel outgoing refetches
-      await queryClient.cancelQueries({
-        queryKey: collectionKeys.detail(variables.collectionId),
-      });
-      await queryClient.cancelQueries({
-        queryKey: collectionKeys.all,
-      });
+      await Promise.all([
+        queryClient.cancelQueries({
+          queryKey: collectionKeys.detail(variables.collectionId),
+          exact: true,
+        }),
+        queryClient.cancelQueries({
+          queryKey: collectionKeys.all,
+          exact: true,
+        }),
+      ]);
 
       // Snapshot for rollback
       const previousCollection = queryClient.getQueryData(

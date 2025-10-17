@@ -3,6 +3,7 @@
 /// This worker continuously polls the job queue and processes jobs asynchronously.
 /// It uses tokio::spawn for background execution, suitable for desktop applications.
 use crate::modules::anime::application::service::AnimeService;
+use crate::modules::anime::domain::services::anime_relations_service::AnimeRelationsService;
 use crate::modules::jobs::domain::entities::{
     EnrichmentJobPayload, JobType, RelationsDiscoveryJobPayload,
 };
@@ -19,6 +20,7 @@ pub struct BackgroundWorker {
     job_repository: Arc<dyn JobRepository>,
     anime_service: Arc<AnimeService>,
     provider_service: Arc<ProviderService>,
+    relations_service: Arc<AnimeRelationsService>,
     poll_interval: Duration,
     is_running: Arc<tokio::sync::RwLock<bool>>,
 }
@@ -29,11 +31,13 @@ impl BackgroundWorker {
         job_repository: Arc<dyn JobRepository>,
         anime_service: Arc<AnimeService>,
         provider_service: Arc<ProviderService>,
+        relations_service: Arc<AnimeRelationsService>,
     ) -> Self {
         Self {
             job_repository,
             anime_service,
             provider_service,
+            relations_service,
             poll_interval: Duration::from_secs(5), // Poll every 5 seconds
             is_running: Arc::new(tokio::sync::RwLock::new(false)),
         }
@@ -279,17 +283,33 @@ impl BackgroundWorker {
             ))
         })?;
 
-        log_debug!("Discovering relations for anime {}", payload.anime_id);
+        log_info!("Discovering relations for anime {}", payload.anime_id);
 
-        // TODO: Implement in Phase 2 - Relations Discovery Refactor
-        // This will use the refactored AnimeRelationsService that calls AnimeIngestionService
-
-        log_info!(
-            "Relations discovery for anime {} - not yet implemented",
-            payload.anime_id
-        );
-
-        Ok(())
+        // Use the relations service to discover and store relations
+        // This will internally use AnimeIngestionService for each discovered anime
+        let anime_id_str = payload.anime_id.to_string();
+        match self
+            .relations_service
+            .get_anime_with_relations(&anime_id_str)
+            .await
+        {
+            Ok(relations) => {
+                log_info!(
+                    "Successfully discovered {} relations for anime {}",
+                    relations.len(),
+                    payload.anime_id
+                );
+                Ok(())
+            }
+            Err(e) => {
+                log_error!(
+                    "Failed to discover relations for anime {}: {}",
+                    payload.anime_id,
+                    e
+                );
+                Err(e)
+            }
+        }
     }
 
     /// Get statistics about the worker and job queue

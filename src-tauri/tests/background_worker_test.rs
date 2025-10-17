@@ -8,7 +8,7 @@
 mod utils;
 
 use miru_lib::modules::jobs::domain::{entities::Job, repository::JobRepository};
-use utils::{db, factories::AnimeFactory, helpers};
+use utils::{factories::AnimeFactory, helpers};
 
 // ================================================================================================
 // JOB PROCESSING TESTS
@@ -16,8 +16,8 @@ use utils::{db, factories::AnimeFactory, helpers};
 
 #[tokio::test]
 async fn worker_processes_single_job() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     // Create anime and enqueue job
@@ -61,8 +61,8 @@ async fn worker_processes_single_job() {
 
 #[tokio::test]
 async fn worker_processes_multiple_jobs() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     // Create 5 anime and queue jobs
@@ -103,8 +103,8 @@ async fn worker_processes_multiple_jobs() {
 
 #[tokio::test]
 async fn jobs_processed_by_priority() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     // Create anime
@@ -150,8 +150,8 @@ async fn jobs_processed_by_priority() {
 
 #[tokio::test]
 async fn failed_job_retries_up_to_3_times() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     // Create job for non-existent anime (will fail)
@@ -232,8 +232,8 @@ async fn failed_job_retries_up_to_3_times() {
 
 #[tokio::test]
 async fn relations_discovery_job_can_be_queued() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let anime = AnimeFactory::minimal().with_anilist_id(16498).build();
@@ -255,8 +255,8 @@ async fn relations_discovery_job_can_be_queued() {
 
 #[tokio::test]
 async fn concurrent_dequeue_no_race_condition() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     // Create and enqueue 10 jobs
@@ -310,8 +310,8 @@ async fn concurrent_dequeue_no_race_condition() {
 
 #[tokio::test]
 async fn job_statistics_accurate() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     // Create 3 anime

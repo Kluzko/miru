@@ -8,7 +8,7 @@ use miru_lib::modules::anime::application::ingestion_service::{
     AnimeSource, IngestionOptions, JobPriority,
 };
 use miru_lib::modules::jobs::domain::repository::JobRepository;
-use utils::{db, factories::AnimeFactory, helpers};
+use utils::{factories::AnimeFactory, helpers};
 
 // ================================================================================================
 // RELATIONS DISCOVERY TESTS
@@ -16,8 +16,8 @@ use utils::{db, factories::AnimeFactory, helpers};
 
 #[tokio::test]
 async fn relations_discovery_job_queued_when_requested() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let anime = AnimeFactory::complete()
@@ -65,8 +65,8 @@ async fn relations_discovery_job_queued_when_requested() {
 
 #[tokio::test]
 async fn relations_discovery_skipped_when_not_requested() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let anime = AnimeFactory::complete()
@@ -111,8 +111,8 @@ async fn relations_discovery_skipped_when_not_requested() {
 
 #[tokio::test]
 async fn saved_anime_matches_ingestion_result() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let anime = AnimeFactory::complete()
@@ -157,8 +157,8 @@ async fn saved_anime_matches_ingestion_result() {
 
 #[tokio::test]
 async fn update_existing_anime_preserves_id() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let original_anime = AnimeFactory::minimal()
@@ -224,8 +224,8 @@ async fn update_existing_anime_preserves_id() {
 
 #[tokio::test]
 async fn timestamps_updated_correctly() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let anime = AnimeFactory::complete()
@@ -262,8 +262,8 @@ async fn timestamps_updated_correctly() {
 
 #[tokio::test]
 async fn genres_persisted_correctly() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let genres = vec!["Action", "Sci-Fi", "Mecha", "Drama"];
@@ -310,8 +310,8 @@ async fn genres_persisted_correctly() {
 
 #[tokio::test]
 async fn studios_persisted_correctly() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let studios = vec!["Sunrise", "Bones", "ufotable"];
@@ -362,8 +362,8 @@ async fn studios_persisted_correctly() {
 
 #[tokio::test]
 async fn quality_metrics_persisted_with_anime() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let anime = AnimeFactory::complete()
@@ -424,8 +424,8 @@ async fn quality_metrics_persisted_with_anime() {
 
 #[tokio::test]
 async fn empty_title_handled_gracefully() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let anime = AnimeFactory::minimal()
@@ -468,12 +468,12 @@ async fn empty_title_handled_gracefully() {
 
 #[tokio::test]
 async fn invalid_score_handled_gracefully() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     // Create anime with impossible score
-    let mut anime = AnimeFactory::complete()
+    let anime = AnimeFactory::complete()
         .with_title("Invalid Score Test")
         .build();
 
@@ -526,8 +526,8 @@ async fn invalid_score_handled_gracefully() {
 
 #[tokio::test]
 async fn concurrent_imports_dont_cause_conflicts() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     // Import multiple different anime concurrently

@@ -469,16 +469,6 @@ impl AnimeIngestionService {
 
         score.max(0.0)
     }
-
-    /// Calculate overall quality score
-    fn calculate_quality_score(&self, anime: &AnimeDetailed) -> f32 {
-        let metrics = self.calculate_quality_metrics(anime);
-        (metrics.completeness_score
-            + metrics.consistency_score
-            + metrics.freshness_score
-            + metrics.source_reliability)
-            / 4.0
-    }
 }
 
 // ========================================================================

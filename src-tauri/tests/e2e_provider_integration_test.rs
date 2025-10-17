@@ -15,7 +15,7 @@ use miru_lib::modules::anime::application::ingestion_service::{
 };
 use miru_lib::modules::anime::domain::value_objects::anime_tier::AnimeTier;
 use miru_lib::modules::jobs::domain::repository::JobRepository;
-use utils::{db, helpers};
+use utils::{helpers};
 
 // ================================================================================================
 // MANUAL IMPORT - FULL PIPELINE TEST
@@ -23,8 +23,8 @@ use utils::{db, helpers};
 
 #[tokio::test]
 async fn e2e_manual_import_fetches_from_provider_and_calculates_tier() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     // Test with a well-known anime: "Attack on Titan"
@@ -135,8 +135,8 @@ async fn e2e_manual_import_fetches_from_provider_and_calculates_tier() {
 
 #[tokio::test]
 async fn e2e_relation_discovery_fetches_by_anilist_id() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     // Test with AniList ID 16498 (Shingeki no Kyojin - a very popular anime)
@@ -237,8 +237,8 @@ async fn e2e_relation_discovery_fetches_by_anilist_id() {
 
 #[tokio::test]
 async fn e2e_low_quality_anime_triggers_enrichment_job() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     // Import a lesser-known anime that might have incomplete data initially
@@ -325,8 +325,8 @@ async fn e2e_low_quality_anime_triggers_enrichment_job() {
 
 #[tokio::test]
 async fn e2e_franchise_discovery_finds_related_anime() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     // Test franchise discovery with "Fate" series (large franchise)
@@ -401,8 +401,8 @@ async fn e2e_franchise_discovery_finds_related_anime() {
 
 #[tokio::test]
 async fn e2e_duplicate_detection_with_real_provider_data() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     // First import: fetch from provider
@@ -489,8 +489,8 @@ async fn e2e_duplicate_detection_with_real_provider_data() {
 
 #[tokio::test]
 async fn e2e_provider_service_merges_data_from_multiple_sources() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     // Import a popular anime that should be in multiple provider databases

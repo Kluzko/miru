@@ -10,7 +10,7 @@ use miru_lib::modules::anime::application::ingestion_service::{
 };
 use miru_lib::modules::anime::domain::value_objects::anime_tier::AnimeTier;
 use miru_lib::modules::jobs::domain::repository::JobRepository;
-use utils::{db, factories::AnimeFactory, helpers};
+use utils::{factories::AnimeFactory, helpers};
 
 // ================================================================================================
 // DATA COMPLETENESS AND TIER CALCULATION TESTS
@@ -18,8 +18,8 @@ use utils::{db, factories::AnimeFactory, helpers};
 
 #[tokio::test]
 async fn empty_optional_fields_result_in_low_tier() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let anime = AnimeFactory::minimal()
@@ -70,8 +70,8 @@ async fn empty_optional_fields_result_in_low_tier() {
 
 #[tokio::test]
 async fn complete_data_with_high_score_gets_s_tier() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let anime = AnimeFactory::complete()
@@ -117,8 +117,8 @@ async fn complete_data_with_high_score_gets_s_tier() {
 
 #[tokio::test]
 async fn medium_quality_data_gets_reasonable_tier() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let anime = AnimeFactory::minimal()
@@ -171,8 +171,8 @@ async fn medium_quality_data_gets_reasonable_tier() {
 
 #[tokio::test]
 async fn quality_metrics_reflect_data_completeness() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let complete_anime = AnimeFactory::complete()
@@ -222,8 +222,8 @@ async fn quality_metrics_reflect_data_completeness() {
 
 #[tokio::test]
 async fn popularity_score_based_on_favorites_and_rating() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let popular_anime = AnimeFactory::complete()
@@ -270,8 +270,8 @@ async fn popularity_score_based_on_favorites_and_rating() {
 
 #[tokio::test]
 async fn high_quality_anime_skips_enrichment_even_when_requested() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let excellent_anime = AnimeFactory::complete()
@@ -320,8 +320,8 @@ async fn high_quality_anime_skips_enrichment_even_when_requested() {
 
 #[tokio::test]
 async fn low_quality_anime_queues_enrichment_with_correct_priority() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let poor_anime = AnimeFactory::minimal()
@@ -378,8 +378,8 @@ async fn low_quality_anime_queues_enrichment_with_correct_priority() {
 
 #[tokio::test]
 async fn batch_import_maintains_individual_quality_scores() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     // Import multiple anime with different quality levels
@@ -470,8 +470,8 @@ async fn batch_import_maintains_individual_quality_scores() {
 
 #[tokio::test]
 async fn anime_with_no_score_still_gets_tier_calculated() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     let anime = AnimeFactory::minimal()
@@ -512,8 +512,8 @@ async fn anime_with_no_score_still_gets_tier_calculated() {
 
 #[tokio::test]
 async fn anime_with_extreme_values_handled_correctly() {
-    let _guard = db::acquire_test_lock();
-    db::clean_test_db();
+    
+    
     let services = helpers::build_test_services();
 
     // Testing extreme values - now fixed to cap composite_score at 10.0
