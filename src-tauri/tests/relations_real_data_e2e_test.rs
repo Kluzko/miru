@@ -82,7 +82,7 @@ async fn e2e_real_anime_has_bidirectional_relations() {
 
                 // Start background worker
                 let worker = services.background_worker.clone();
-                let worker_handle = tokio::spawn(async move { worker.start().await });
+                let worker_handle = tokio::spawn(async move { worker.run().await });
 
                 // Wait for job to complete (check every 2 seconds for up to 30 seconds)
                 let mut relations_found = false;
@@ -307,7 +307,7 @@ async fn e2e_complex_franchise_all_relations_bidirectional() {
                 // Start background worker to process relations job
                 println!("\nStarting background worker to discover franchise...");
                 let worker = services.background_worker.clone();
-                let worker_handle = tokio::spawn(async move { worker.start().await });
+                let worker_handle = tokio::spawn(async move { worker.run().await });
 
                 // Wait for relations to be discovered (up to 45 seconds)
                 let mut relations_count = 0;
@@ -437,7 +437,7 @@ async fn e2e_relations_discovery_is_idempotent() {
 
                 // Process first relations discovery
                 let worker = services.background_worker.clone();
-                let worker_handle = tokio::spawn(async move { worker.start().await });
+                let worker_handle = tokio::spawn(async move { worker.run().await });
                 sleep(Duration::from_secs(15)).await;
                 services.background_worker.stop().await;
                 let _ = worker_handle.await;
@@ -473,7 +473,7 @@ async fn e2e_relations_discovery_is_idempotent() {
 
                 // Process second relations discovery
                 let worker2 = services.background_worker.clone();
-                let worker_handle2 = tokio::spawn(async move { worker2.start().await });
+                let worker_handle2 = tokio::spawn(async move { worker2.run().await });
                 sleep(Duration::from_secs(15)).await;
                 services.background_worker.stop().await;
                 let _ = worker_handle2.await;

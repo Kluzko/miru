@@ -90,7 +90,10 @@ pub fn build_test_services_with_pool(pool: super::test_db::TestPool) -> TestServ
 
 /// Run background worker for a specified duration then stop it
 pub async fn run_worker_for_duration(worker: Arc<BackgroundWorker>, duration_secs: u64) {
-    let handle = worker.clone().start();
+    let worker_clone = worker.clone();
+    let handle = tokio::spawn(async move {
+        worker_clone.run().await;
+    });
     tokio::time::sleep(tokio::time::Duration::from_secs(duration_secs)).await;
     worker.stop().await;
     let _ = tokio::time::timeout(tokio::time::Duration::from_secs(2), handle).await;

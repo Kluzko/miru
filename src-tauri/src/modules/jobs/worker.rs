@@ -13,7 +13,6 @@ use crate::shared::errors::AppResult;
 use crate::{log_debug, log_error, log_info, log_warn};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::task::JoinHandle;
 
 /// Background worker that processes jobs from the queue
 pub struct BackgroundWorker {
@@ -45,43 +44,42 @@ impl BackgroundWorker {
 
     /// Start the background worker
     ///
-    /// Returns a JoinHandle that can be used to stop the worker
-    pub fn start(self: Arc<Self>) -> JoinHandle<()> {
-        tokio::spawn(async move {
-            log_info!("Background worker started");
+    /// This method runs the worker loop. Call it with tokio::spawn or tauri::async_runtime::spawn
+    /// to run in the background.
+    pub async fn run(self: Arc<Self>) {
+        log_info!("Background worker started");
 
-            // Mark as running
+        // Mark as running
+        {
+            let mut running = self.is_running.write().await;
+            *running = true;
+        }
+
+        loop {
+            // Check if we should stop
             {
-                let mut running = self.is_running.write().await;
-                *running = true;
+                let running = self.is_running.read().await;
+                if !*running {
+                    log_info!("Background worker stopped");
+                    break;
+                }
             }
 
-            loop {
-                // Check if we should stop
-                {
-                    let running = self.is_running.read().await;
-                    if !*running {
-                        log_info!("Background worker stopped");
-                        break;
-                    }
-                }
-
-                // Try to dequeue and process a job
-                match self.process_next_job().await {
-                    Ok(processed) => {
-                        if !processed {
-                            // No jobs available, sleep before next poll
-                            tokio::time::sleep(self.poll_interval).await;
-                        }
-                        // If job was processed, immediately try to get next one
-                    }
-                    Err(e) => {
-                        log_error!("Error in worker loop: {}", e);
+            // Try to dequeue and process a job
+            match self.process_next_job().await {
+                Ok(processed) => {
+                    if !processed {
+                        // No jobs available, sleep before next poll
                         tokio::time::sleep(self.poll_interval).await;
                     }
+                    // If job was processed, immediately try to get next one
+                }
+                Err(e) => {
+                    log_error!("Error in worker loop: {}", e);
+                    tokio::time::sleep(self.poll_interval).await;
                 }
             }
-        })
+        }
     }
 
     /// Stop the background worker

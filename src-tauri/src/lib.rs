@@ -217,6 +217,7 @@ pub fn run() {
                 )
             );
 
+            // Initialize background worker
             let background_worker = Arc::new(BackgroundWorker::new(
                 job_repository.clone(),
                 Arc::clone(&anime_service),
@@ -224,12 +225,17 @@ pub fn run() {
                 Arc::clone(&anime_relations_service),
             ));
 
-            // Start background worker
-            let worker_handle = background_worker.clone().start();
-            log::info!("Background worker started for anime enrichment and relations discovery");
+            // Start background worker using Tauri's async runtime
+            // This is the proper way to start async tasks in Tauri's setup hook
+            let worker = background_worker.clone();
+            let worker_handle = spawn(async move {
+                worker.run().await;
+            });
+            log::info!("Background worker initialized for anime enrichment and relations discovery");
 
             // Store worker handle for graceful shutdown
             app.manage(worker_handle);
+            app.manage(background_worker);
 
             // Manage state so commands can access services via `State<T>`
             app.manage(anime_service);

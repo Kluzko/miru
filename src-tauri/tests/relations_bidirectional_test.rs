@@ -23,9 +23,6 @@ use utils::{factories::AnimeFactory, helpers};
 
 #[tokio::test]
 async fn bidirectional_relations_sequel_prequel() {
-    
-    
-
     let services = helpers::build_test_services();
 
     // Create Season 1
@@ -129,9 +126,6 @@ async fn bidirectional_relations_sequel_prequel() {
 
 #[tokio::test]
 async fn bidirectional_relations_side_story_parent_story() {
-    
-    
-
     let services = helpers::build_test_services();
 
     // Create main story
@@ -197,9 +191,6 @@ async fn bidirectional_relations_side_story_parent_story() {
 
 #[tokio::test]
 async fn bidirectional_relations_symmetric_types() {
-    
-    
-
     let services = helpers::build_test_services();
 
     // Create two alternative versions
@@ -264,9 +255,6 @@ async fn bidirectional_relations_symmetric_types() {
 
 #[tokio::test]
 async fn bidirectional_relations_multiple_relations() {
-    
-    
-
     let services = helpers::build_test_services();
 
     // Create franchise with multiple entries
@@ -365,9 +353,6 @@ async fn bidirectional_relations_multiple_relations() {
 
 #[tokio::test]
 async fn bidirectional_relations_idempotent_updates() {
-    
-    
-
     let services = helpers::build_test_services();
 
     let anime1 = AnimeFactory::complete().with_title("Anime 1").build();
@@ -440,9 +425,6 @@ async fn bidirectional_relations_idempotent_updates() {
 
 #[tokio::test]
 async fn relations_discovery_uses_ingestion_service_not_legacy() {
-    
-    
-
     let services = helpers::build_test_services();
 
     // Create an anime via ingestion service
@@ -503,9 +485,6 @@ async fn relations_discovery_uses_ingestion_service_not_legacy() {
 
 #[tokio::test]
 async fn relations_discovery_with_missing_data_still_calculates_tier() {
-    
-    
-
     let services = helpers::build_test_services();
 
     // Create anime with MINIMAL data (this would trigger legacy fallback in old code)
@@ -560,9 +539,6 @@ async fn relations_discovery_with_missing_data_still_calculates_tier() {
 
 #[tokio::test]
 async fn relations_job_handler_processes_job_successfully() {
-    
-    
-
     let services = helpers::build_test_services();
 
     // Create an anime
@@ -590,7 +566,10 @@ async fn relations_job_handler_processes_job_successfully() {
         .expect("Enqueueing job should succeed");
 
     // Start background worker
-    let worker_handle = services.background_worker.clone().start();
+    let worker = services.background_worker.clone();
+    let worker_handle = tokio::spawn(async move {
+        worker.run().await;
+    });
 
     // Wait for job to be processed (max 10 seconds)
     tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
@@ -615,9 +594,6 @@ async fn relations_job_handler_processes_job_successfully() {
 
 #[tokio::test]
 async fn relations_job_handler_handles_nonexistent_anime() {
-    
-    
-
     let services = helpers::build_test_services();
 
     // Queue a job for non-existent anime
@@ -630,7 +606,10 @@ async fn relations_job_handler_handles_nonexistent_anime() {
         .expect("Enqueueing job should succeed");
 
     // Start background worker
-    let worker_handle = services.background_worker.clone().start();
+    let worker = services.background_worker.clone();
+    let worker_handle = tokio::spawn(async move {
+        worker.run().await;
+    });
 
     // Wait for job processing
     tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
@@ -662,9 +641,6 @@ async fn relations_job_handler_handles_nonexistent_anime() {
 
 #[tokio::test]
 async fn circular_relations_dont_cause_infinite_loop() {
-    
-    
-
     let services = helpers::build_test_services();
 
     // Create A and B
@@ -731,9 +707,6 @@ async fn circular_relations_dont_cause_infinite_loop() {
 
 #[tokio::test]
 async fn self_referential_relation_rejected() {
-    
-    
-
     let services = helpers::build_test_services();
 
     let anime = AnimeFactory::complete().with_title("Self Ref").build();
@@ -767,9 +740,6 @@ async fn self_referential_relation_rejected() {
 
 #[tokio::test]
 async fn relation_to_nonexistent_anime_rejected() {
-    
-    
-
     let services = helpers::build_test_services();
 
     let anime = AnimeFactory::complete().with_title("Real Anime").build();
@@ -801,9 +771,6 @@ async fn relation_to_nonexistent_anime_rejected() {
 
 #[tokio::test]
 async fn unknown_relation_type_defaults_to_other() {
-    
-    
-
     let services = helpers::build_test_services();
 
     let a1 = AnimeFactory::complete().with_title("A1").build();
@@ -864,9 +831,6 @@ async fn unknown_relation_type_defaults_to_other() {
 
 #[tokio::test]
 async fn case_insensitive_relation_types() {
-    
-    
-
     let services = helpers::build_test_services();
 
     let a1 = AnimeFactory::complete().with_title("A1").build();
@@ -923,9 +887,6 @@ async fn case_insensitive_relation_types() {
 
 #[tokio::test]
 async fn bidirectional_save_is_atomic() {
-    
-    
-
     let services = helpers::build_test_services();
 
     let a1 = AnimeFactory::complete().with_title("A1").build();
@@ -984,9 +945,6 @@ async fn bidirectional_save_is_atomic() {
 
 #[tokio::test]
 async fn multiple_relations_saved_atomically() {
-    
-    
-
     let services = helpers::build_test_services();
 
     // Create 4 anime
