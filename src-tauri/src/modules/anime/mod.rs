@@ -8,7 +8,7 @@ pub use application::ingestion_service::{
     AnimeIngestionService, AnimeSource, IngestionOptions, IngestionResult, JobPriority,
 };
 pub use application::service::AnimeService;
-pub use domain::{AnimeDetailed, AnimeRepository};
+pub use domain::{AnimeAggregate, AnimeDetailed, AnimeRepository};
 
 // Relationship entities removed - using simplified approach with AnimeWithRelationMetadata
 
@@ -16,3 +16,12 @@ pub use domain::{AnimeDetailed, AnimeRepository};
 pub use domain::value_objects::{AnimeStatus, AnimeTier, AnimeType};
 
 // Re-export infrastructure components
+
+// Re-export application layer use cases and ports
+pub use application::{
+    AnimeQueryRepository, AnimeRelationsRepository, AnimeRepository as IAnimeRepository,
+    AnimeSearchSpecification, CreateAnimeCommand, CreateAnimeHandler, CreateAnimeResult,
+    DiscoverRelationsCommand, DiscoverRelationsHandler, DiscoverRelationsResult, EventPublisher,
+    ProviderClient, SearchAnimeHandler, SearchAnimeQuery, SearchAnimeResult,
+    UpdateAnimeScoreCommand, UpdateAnimeScoreHandler, UpdateAnimeScoreResult,
+};

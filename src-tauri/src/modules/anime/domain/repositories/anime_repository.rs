@@ -1,5 +1,5 @@
 use super::super::entities::anime_detailed::AnimeDetailed;
-use crate::modules::provider::AnimeProvider;
+use crate::shared::domain::value_objects::AnimeProvider;
 use crate::shared::errors::AppResult;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};

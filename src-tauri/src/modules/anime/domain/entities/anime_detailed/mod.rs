@@ -2,8 +2,9 @@ use super::genre::Genre;
 use crate::modules::anime::domain::value_objects::{
     AnimeStatus, AnimeTier, AnimeTitle, AnimeType, QualityMetrics,
 };
-use crate::modules::provider::domain::{AnimeProvider, ProviderMetadata};
-use crate::shared::domain::value_objects::UnifiedAgeRestriction;
+use crate::shared::domain::value_objects::{
+    AnimeProvider, ProviderMetadata, UnifiedAgeRestriction,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -123,5 +124,121 @@ impl AnimeDetailed {
             updated_at: now,
             last_synced_at: None,
         }
+    }
+
+    // ============================================================================================
+    // VALIDATION METHODS (Aggregate Boundary Protection)
+    // ============================================================================================
+
+    /// Update score with validation (must be 0-10)
+    pub fn update_score(&mut self, score: f32) -> Result<(), String> {
+        if score < 0.0 || score > 10.0 {
+            return Err(format!("Score must be between 0-10, got {}", score));
+        }
+        self.score = Some(score);
+        self.rating = Some(score); // Keep rating in sync
+        self.updated_at = Utc::now();
+        Ok(())
+    }
+
+    /// Update episodes with validation (must be positive)
+    pub fn update_episodes(&mut self, episodes: u16) -> Result<(), String> {
+        if episodes == 0 {
+            return Err("Episodes must be greater than 0".to_string());
+        }
+        self.episodes = Some(episodes);
+        self.updated_at = Utc::now();
+        Ok(())
+    }
+
+    /// Update title with validation (cannot be empty)
+    pub fn update_title(&mut self, title: AnimeTitle) -> Result<(), String> {
+        if title.main.trim().is_empty() {
+            return Err("Title cannot be empty".to_string());
+        }
+        self.title = title;
+        self.updated_at = Utc::now();
+        Ok(())
+    }
+
+    /// Update composite score and tier together (maintains invariant)
+    pub fn update_composite_score_and_tier(
+        &mut self,
+        composite_score: f32,
+        tier: AnimeTier,
+    ) -> Result<(), String> {
+        if composite_score < 0.0 || composite_score > 10.0 {
+            return Err(format!(
+                "Composite score must be between 0-10, got {}",
+                composite_score
+            ));
+        }
+        self.composite_score = composite_score;
+        self.tier = tier;
+        self.updated_at = Utc::now();
+        Ok(())
+    }
+
+    /// Validate current state
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+
+        if self.title.main.trim().is_empty() {
+            errors.push("Title cannot be empty".to_string());
+        }
+
+        if let Some(score) = self.score {
+            if score < 0.0 || score > 10.0 {
+                errors.push(format!("Score must be 0-10, got {}", score));
+            }
+        }
+
+        if let Some(episodes) = self.episodes {
+            if episodes == 0 {
+                errors.push("Episodes must be greater than 0".to_string());
+            }
+        }
+
+        if self.composite_score < 0.0 || self.composite_score > 10.0 {
+            errors.push(format!(
+                "Composite score must be 0-10, got {}",
+                self.composite_score
+            ));
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+
+    // ============================================================================================
+    // SAFE ACCESSORS (Encapsulation Support)
+    // ============================================================================================
+
+    /// Get ID (immutable)
+    pub fn id(&self) -> &Uuid {
+        &self.id
+    }
+
+    /// Get title (immutable reference)
+    pub fn title(&self) -> &AnimeTitle {
+        &self.title
+    }
+
+    /// Get score (safe copy)
+    pub fn score(&self) -> Option<f32> {
+        self.score
+    }
+
+    /// Get composite score
+    pub fn composite_score(&self) -> f32 {
+        self.composite_score
+    }
+
+    /// Get tier
+    pub fn tier(&self) -> AnimeTier {
+        self.tier
     }
 }

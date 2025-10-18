@@ -204,7 +204,7 @@ impl AnimeData {
 mod tests {
     use super::*;
     use crate::modules::anime::domain::value_objects::{AnimeStatus, AnimeTitle, AnimeType};
-    use crate::modules::provider::domain::value_objects::provider_metadata::ProviderMetadata;
+    use crate::shared::domain::value_objects::ProviderMetadata;
     use chrono::Utc;
     use uuid::Uuid;
 

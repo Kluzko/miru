@@ -1,5 +1,3 @@
-//! Anime provider enum and capabilities
-
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::fmt;
@@ -43,6 +41,3 @@ impl fmt::Display for AnimeProvider {
         write!(f, "{}", name)
     }
 }
-
-// ProviderFeature enum removed - was unused
-// If needed in future, can be re-added with specific features required

@@ -6,11 +6,8 @@ use crate::modules::anime::domain::{
     },
     value_objects::{AnimeStatus, AnimeTier, AnimeTitle, AnimeType, QualityMetrics},
 };
-use crate::modules::provider::domain::{
-    entities::anime_data::{AnimeData, DataQuality, DataSource},
-    value_objects::provider_metadata::ProviderMetadata,
-    AnimeProvider,
-};
+use crate::modules::provider::domain::entities::anime_data::{AnimeData, DataQuality, DataSource};
+use crate::shared::domain::value_objects::{AnimeProvider, ProviderMetadata};
 
 use crate::shared::domain::value_objects::UnifiedAgeRestriction;
 use crate::shared::errors::AppError;

@@ -19,7 +19,8 @@ use crate::modules::data_import::domain::services::import_components::{
     data_enhancement_service::DataEnhancementService, types::DataQualityMetrics,
     validation_service::ValidationService,
 };
-use crate::modules::provider::{AnimeProvider, ProviderService};
+use crate::modules::provider::ProviderService;
+use crate::shared::domain::value_objects::AnimeProvider;
 use crate::shared::errors::AppResult;
 use crate::{log_debug, log_info};
 use futures::future;

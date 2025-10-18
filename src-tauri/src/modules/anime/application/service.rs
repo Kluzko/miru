@@ -2,7 +2,8 @@ use super::super::domain::{
     entities::anime_detailed::AnimeDetailed, repositories::anime_repository::AnimeRepository,
     services::score_calculator::ScoreCalculator,
 };
-use crate::modules::provider::{AnimeProvider, ProviderService};
+use crate::modules::provider::ProviderService;
+use crate::shared::domain::value_objects::AnimeProvider;
 use crate::shared::errors::AppResult;
 use crate::shared::utils::logger::LogContext;
 use crate::{log_debug, log_info};

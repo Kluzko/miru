@@ -211,7 +211,7 @@ async fn find_anilist_by_title(
     anime: &crate::modules::anime::AnimeDetailed,
     provider_service: &ProviderService,
 ) -> Result<Option<u32>, String> {
-    use crate::modules::provider::domain::value_objects::provider_enum::AnimeProvider;
+    use crate::shared::domain::value_objects::AnimeProvider;
 
     // Get Jikan ID from current provider metadata
     let jikan_id = anime
@@ -316,7 +316,7 @@ async fn find_jikan_by_title(
     anime: &crate::modules::anime::AnimeDetailed,
     provider_service: &ProviderService,
 ) -> Result<Option<u32>, String> {
-    use crate::modules::provider::domain::value_objects::provider_enum::AnimeProvider;
+    use crate::shared::domain::value_objects::AnimeProvider;
 
     // Get AniList ID from current provider metadata
     let anilist_id = anime
@@ -627,8 +627,8 @@ async fn merge_and_save_enriched_data(
 /// Get the primary provider for an anime based on its external IDs
 fn get_primary_provider(
     anime: &crate::modules::anime::AnimeDetailed,
-) -> crate::modules::provider::domain::value_objects::provider_enum::AnimeProvider {
-    use crate::modules::provider::domain::value_objects::provider_enum::AnimeProvider;
+) -> crate::shared::domain::value_objects::AnimeProvider {
+    use crate::shared::domain::value_objects::AnimeProvider;
 
     let external_ids = &anime.provider_metadata.external_ids;
 
@@ -646,7 +646,7 @@ fn get_primary_provider(
 /// Get all providers that have data for this anime
 fn get_all_providers(
     anime: &crate::modules::anime::AnimeDetailed,
-) -> Vec<crate::modules::provider::domain::value_objects::provider_enum::AnimeProvider> {
+) -> Vec<crate::shared::domain::value_objects::AnimeProvider> {
     anime
         .provider_metadata
         .external_ids

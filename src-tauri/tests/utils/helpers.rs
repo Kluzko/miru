@@ -15,7 +15,7 @@ use miru_lib::modules::{
         infrastructure::adapters::{CacheAdapter, ProviderRepositoryAdapter},
     },
 };
-use miru_lib::shared::database::Database;
+use miru_lib::shared::infrastructure::database::Database;
 use std::sync::Arc;
 
 pub struct TestServices {

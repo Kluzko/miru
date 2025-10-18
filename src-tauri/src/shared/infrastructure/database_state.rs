@@ -1,4 +1,5 @@
-use crate::shared::{database::Database, errors::AppError};
+use super::database::Database;
+use crate::shared::errors::AppError;
 use std::sync::Arc;
 
 /// Represents the state of the database connection

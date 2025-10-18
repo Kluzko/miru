@@ -2,8 +2,9 @@ use crate::modules::anime::domain::{
     entities::anime_detailed::AnimeDetailed, repositories::anime_repository::AnimeRepository,
 };
 use crate::modules::provider::{
-    application::service::ProviderService, domain::entities::anime_data::AnimeData, AnimeProvider,
+    application::service::ProviderService, domain::entities::anime_data::AnimeData,
 };
+use crate::shared::domain::value_objects::AnimeProvider;
 use crate::shared::errors::{AppError, AppResult};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};

@@ -5,12 +5,11 @@ use crate::modules::provider::domain::repositories::{
     anime_provider_repo::AnimeProviderRepository, cache_repo::CacheRepository,
 };
 use crate::modules::provider::domain::services::{AnimeSearchService, ProviderSelectionService};
-use crate::modules::provider::domain::value_objects::{
-    provider_enum::AnimeProvider, SearchCriteria,
-};
+use crate::modules::provider::domain::value_objects::SearchCriteria;
 use crate::modules::provider::infrastructure::adapters::anilist::{
     adapter::AniListAdapter, models::CategorizedFranchise, models::FranchiseRelation,
 };
+use crate::shared::domain::value_objects::AnimeProvider;
 use crate::shared::errors::AppResult;
 use std::sync::Arc;
 

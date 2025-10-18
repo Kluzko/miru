@@ -1,3 +1,11 @@
-pub mod anime_repository_impl;
+// Modular repository implementations following DDD
+pub mod repositories;
 
-pub use anime_repository_impl::AnimeRepositoryImpl;
+// Shared mapping utilities
+pub mod mapper;
+
+// Re-export repository implementations
+pub use repositories::{
+    inverse_relation_type, AnimeQueryRepositoryImpl, AnimeRelationsRepositoryImpl,
+    AnimeRepositoryImpl, AnimeSearchSpecification,
+};

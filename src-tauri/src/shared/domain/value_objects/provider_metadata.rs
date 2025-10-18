@@ -1,4 +1,4 @@
-use super::provider_enum::AnimeProvider;
+use super::anime_provider::AnimeProvider;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashMap;
@@ -8,13 +8,10 @@ use std::collections::HashMap;
 pub struct ProviderMetadata {
     /// External IDs from different providers
     pub external_ids: HashMap<AnimeProvider, String>,
-
     /// URLs to provider pages
     pub provider_urls: HashMap<AnimeProvider, String>,
-
     /// User's preferred provider for primary data
     pub user_preferred_provider: Option<AnimeProvider>,
-
     /// Current primary provider (can be different from user preference if not available)
     pub primary_provider: AnimeProvider,
 }
@@ -22,8 +19,7 @@ pub struct ProviderMetadata {
 impl ProviderMetadata {
     pub fn new(primary_provider: AnimeProvider, external_id: String) -> Self {
         let mut external_ids = HashMap::new();
-        external_ids.insert(primary_provider.clone(), external_id);
-
+        external_ids.insert(primary_provider, external_id);
         Self {
             external_ids,
             provider_urls: HashMap::new(),
@@ -65,8 +61,7 @@ impl ProviderMetadata {
                 provider
             ));
         }
-
-        self.primary_provider = provider.clone();
+        self.primary_provider = provider;
         self.user_preferred_provider = Some(provider);
         Ok(())
     }

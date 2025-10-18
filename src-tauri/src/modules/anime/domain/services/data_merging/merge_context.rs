@@ -1,5 +1,5 @@
 use crate::modules::provider::domain::entities::anime_data::AnimeData;
-use crate::modules::provider::AnimeProvider;
+use crate::shared::domain::value_objects::AnimeProvider;
 
 /// Context for merging anime data
 /// Contains all information needed to make intelligent merge decisions

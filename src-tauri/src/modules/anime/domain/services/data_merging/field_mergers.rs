@@ -264,7 +264,7 @@ pub struct MediaMerger;
 
 impl FieldMerger for MediaMerger {
     fn merge_into(&self, target: &mut AnimeDetailed, context: &MergeContext) {
-        use crate::modules::provider::AnimeProvider;
+        use crate::shared::domain::value_objects::AnimeProvider;
 
         // Images: prefer from specified provider (typically AniList for quality)
         if target.image_url.is_none() {
