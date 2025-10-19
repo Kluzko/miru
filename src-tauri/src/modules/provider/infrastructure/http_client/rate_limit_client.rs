@@ -49,6 +49,17 @@ impl RateLimitClient {
         )
     }
 
+    /// Create a new client for TMDB API
+    pub fn for_tmdb() -> Self {
+        Self::new(
+            "TMDB",
+            RetryPolicy::anilist(), // Use AniList's policy as TMDB has generous limits
+            // TMDB: 50 req/sec with burst capacity
+            Self::create_rate_limiter(40.0, 50),
+            "miru/1.0 (https://github.com/your-repo/miru)".to_string(),
+        )
+    }
+
     /// Create a rate limiter with specified requests per second and burst capacity
     fn create_rate_limiter(
         requests_per_second: f64,

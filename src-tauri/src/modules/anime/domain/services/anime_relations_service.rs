@@ -1,5 +1,8 @@
-use crate::modules::anime::domain::{
-    entities::anime_detailed::AnimeDetailed, repositories::anime_repository::AnimeRepository,
+use crate::modules::anime::{
+    domain::{
+        entities::anime_detailed::AnimeDetailed, repositories::anime_repository::AnimeRepository,
+    },
+    infrastructure::persistence::AnimeRelationsRepositoryImpl,
 };
 use crate::modules::provider::{
     application::service::ProviderService, domain::entities::anime_data::AnimeData,
@@ -217,6 +220,7 @@ impl RelationMetadata {
 pub struct AnimeRelationsService {
     cache: Arc<RelationsCache>,
     anime_repo: Option<Arc<dyn AnimeRepository>>,
+    relations_repo: Option<Arc<AnimeRelationsRepositoryImpl>>,
     provider_service: Arc<ProviderService>,
     ingestion_service:
         Arc<crate::modules::anime::application::ingestion_service::AnimeIngestionService>,
@@ -226,6 +230,7 @@ impl AnimeRelationsService {
     pub fn new(
         cache: Arc<RelationsCache>,
         anime_repo: Option<Arc<dyn AnimeRepository>>,
+        relations_repo: Option<Arc<AnimeRelationsRepositoryImpl>>,
         provider_service: Arc<ProviderService>,
         ingestion_service: Arc<
             crate::modules::anime::application::ingestion_service::AnimeIngestionService,
@@ -234,6 +239,7 @@ impl AnimeRelationsService {
         Self {
             cache,
             anime_repo,
+            relations_repo,
             provider_service,
             ingestion_service,
         }
@@ -440,16 +446,17 @@ impl AnimeRelationsService {
             anime_id
         );
 
-        if let Some(repo) = &self.anime_repo {
-            let anime_uuid = match Uuid::parse_str(anime_id) {
-                Ok(uuid) => uuid,
-                Err(_) => {
-                    log::warn!("Invalid UUID format for anime_id: {}", anime_id);
-                    return Ok(Vec::new());
-                }
-            };
+        let anime_uuid = match Uuid::parse_str(anime_id) {
+            Ok(uuid) => uuid,
+            Err(_) => {
+                log::warn!("Invalid UUID format for anime_id: {}", anime_id);
+                return Ok(Vec::new());
+            }
+        };
 
-            match repo.get_anime_with_relations(&anime_uuid).await {
+        // Use the dedicated relations repository if available
+        if let Some(relations_repo) = &self.relations_repo {
+            match relations_repo.get_anime_with_relations(&anime_uuid).await {
                 Ok(relations) if !relations.is_empty() => {
                     log::debug!(
                         "Successfully fetched {} anime with relations",
@@ -465,46 +472,54 @@ impl AnimeRelationsService {
                     );
 
                     // Attempt to discover and store relations
-                    match self.discover_and_store_relations(anime_id, repo).await {
-                        Ok(Some(_)) => {
-                            // Discovery successful, retry the query
-                            log::info!(
-                                "Auto-discovery completed for {}, refetching relations",
-                                anime_id
-                            );
-                            match repo.get_anime_with_relations(&anime_uuid).await {
-                                Ok(relations) => {
-                                    log::info!(
-                                        "Successfully loaded {} relations after auto-discovery",
-                                        relations.len()
-                                    );
-                                    Ok(relations)
-                                }
-                                Err(e) => {
-                                    log::error!(
-                                        "Failed to fetch relations after discovery for {}: {}",
-                                        anime_id,
-                                        e
-                                    );
-                                    Ok(Vec::new()) // Return empty instead of error
+                    if let Some(anime_repo) = &self.anime_repo {
+                        match self
+                            .discover_and_store_relations(anime_id, anime_repo)
+                            .await
+                        {
+                            Ok(Some(_)) => {
+                                // Discovery successful, retry the query
+                                log::info!(
+                                    "Auto-discovery completed for {}, refetching relations",
+                                    anime_id
+                                );
+                                match relations_repo.get_anime_with_relations(&anime_uuid).await {
+                                    Ok(relations) => {
+                                        log::info!(
+                                            "Successfully loaded {} relations after auto-discovery",
+                                            relations.len()
+                                        );
+                                        Ok(relations)
+                                    }
+                                    Err(e) => {
+                                        log::error!(
+                                            "Failed to fetch relations after discovery for {}: {}",
+                                            anime_id,
+                                            e
+                                        );
+                                        Ok(Vec::new()) // Return empty instead of error
+                                    }
                                 }
                             }
+                            Ok(None) => {
+                                log::info!(
+                                    "No relations discovered for {} (anime may not have franchise relations or missing AniList ID)",
+                                    anime_id
+                                );
+                                Ok(Vec::new())
+                            }
+                            Err(e) => {
+                                log::warn!(
+                                    "Auto-discovery failed for {}: {}. Returning empty relations.",
+                                    anime_id,
+                                    e
+                                );
+                                Ok(Vec::new()) // Return empty instead of propagating error
+                            }
                         }
-                        Ok(None) => {
-                            log::info!(
-                                "No relations discovered for {} (anime may not have franchise relations or missing AniList ID)",
-                                anime_id
-                            );
-                            Ok(Vec::new())
-                        }
-                        Err(e) => {
-                            log::warn!(
-                                "Auto-discovery failed for {}: {}. Returning empty relations.",
-                                anime_id,
-                                e
-                            );
-                            Ok(Vec::new()) // Return empty instead of propagating error
-                        }
+                    } else {
+                        log::warn!("No anime repository available for auto-discovery");
+                        Ok(Vec::new())
                     }
                 }
                 Err(e) => {
@@ -513,7 +528,7 @@ impl AnimeRelationsService {
                 }
             }
         } else {
-            log::warn!("No repository available for batch relations fetch");
+            log::warn!("No relations repository available for batch relations fetch");
             Ok(Vec::new())
         }
     }
@@ -839,16 +854,23 @@ impl AnimeRelationsService {
             relations_to_save.len()
         );
 
-        // Now save relations - this should work since anime records exist
-        if let Err(e) = repo.save_relations(&anime_uuid, &enriched_relations).await {
-            log::error!("Failed to save relations for {}: {}", anime_id, e);
-            // Continue anyway - we can still return the API data
+        // Now save relations - use the dedicated relations repository
+        if let Some(relations_repo) = &self.relations_repo {
+            if let Err(e) = relations_repo
+                .save_relations(&anime_uuid, &enriched_relations)
+                .await
+            {
+                log::error!("Failed to save relations for {}: {}", anime_id, e);
+                // Continue anyway - we can still return the API data
+            } else {
+                log::info!(
+                    "Successfully saved {} relations for {} to database",
+                    enriched_relations.len(),
+                    anime_id
+                );
+            }
         } else {
-            log::info!(
-                "Successfully saved {} relations for {} to database",
-                enriched_relations.len(),
-                anime_id
-            );
+            log::warn!("Relations repository not available, relations not saved to database");
         }
 
         // Create BasicRelations result - always return the discovered relations

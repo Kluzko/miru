@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 /// Test helper functions and service builders
 use miru_lib::modules::{
     anime::{
@@ -64,10 +66,20 @@ pub fn build_test_services_with_pool(pool: super::test_db::TestPool) -> TestServ
         job_repo.clone(),
     ));
 
+    // Create anime relations repository
+    let anime_repo_impl = Arc::new(AnimeRepositoryImpl::new(db.clone()));
+    let anime_relations_repo = Arc::new(
+        miru_lib::modules::anime::infrastructure::persistence::AnimeRelationsRepositoryImpl::new(
+            db.clone(),
+            anime_repo_impl.clone(),
+        ),
+    );
+
     let relations_cache = Arc::new(RelationsCache::new());
     let relations_service = Arc::new(AnimeRelationsService::new(
         relations_cache,
         Some(anime_repo.clone()),
+        Some(anime_relations_repo),
         provider_service.clone(),
         ingestion_service.clone(),
     ));

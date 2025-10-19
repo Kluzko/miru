@@ -22,19 +22,8 @@ export const animeApi = {
     return invoke("getAnimeWithRelations", animeId);
   },
 
-  // Enrichment API methods for automatic provider data enhancement
-  enrichProviders: async (animeId: string) => {
-    return invoke("enrichAnimeProviders", { animeId });
-  },
-
-  resyncAnime: async (animeId: string, forceRefresh?: boolean) => {
-    return invoke("resyncAnimeData", {
-      animeId,
-      forceRefresh: forceRefresh ?? null,
-    });
-  },
-
   // Auto-enrichment API for background enrichment on loading
+  // This is the only enrichment method - it handles both initial load and manual enrichment
   autoEnrichOnLoad: async (animeId: string) => {
     return invoke("autoEnrichOnLoad", { animeId });
   },

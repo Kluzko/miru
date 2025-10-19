@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 /// Data Quality and Enrichment Integration Tests
 ///
 /// Tests that verify the data quality calculation, tier assignment,

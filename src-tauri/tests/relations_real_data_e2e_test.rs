@@ -1,8 +1,14 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
+/// Real-world E2E tests with actual AniList API calls
+///
 /// These tests use REAL anime data from AniList to verify:
-/// 1. Relations discovery fetches and saves real franchise relationships
-/// 2. Bidirectional relations are created correctly
-/// 3. No legacy fallback is used (proper tier calculation)
-/// 4. Background jobs process real relations correctly
+/// 1. Real anime data can be fetched and imported from AniList
+/// 2. Relations discovery fetches and saves real franchise relationships
+/// 3. Bidirectional relations are created correctly
+/// 4. No legacy fallback is used (proper tier calculation)
+/// 5. Background jobs process real relations correctly
 ///
 /// ⚠️ WARNING: These tests:
 /// - Make real HTTP requests to AniList API
@@ -35,8 +41,14 @@ async fn e2e_real_anime_has_bidirectional_relations() {
             Box::pin(async move {
                 let services = helpers::build_test_services_with_pool(pool);
 
-                println!("\n=== Testing Real Anime Bidirectional Relations ===");
-                println!("Importing Death Note from AniList...\n");
+                println!(
+                    "
+=== Testing Real Anime Bidirectional Relations ==="
+                );
+                println!(
+                    "Importing Death Note from AniList...
+"
+                );
 
                 // Step 1: Import Death Note via manual search (will fetch from AniList)
                 let death_note_result = services
@@ -78,7 +90,10 @@ async fn e2e_real_anime_has_bidirectional_relations() {
                 );
 
                 // Step 2: Wait for relations discovery job to complete
-                println!("\nWaiting for relations discovery job to process...");
+                println!(
+                    "
+Waiting for relations discovery job to process..."
+                );
 
                 // Start background worker
                 let worker = services.background_worker.clone();
@@ -113,7 +128,10 @@ async fn e2e_real_anime_has_bidirectional_relations() {
                 );
 
                 // Step 3: Verify bidirectional relations
-                println!("\nVerifying bidirectional relations...");
+                println!(
+                    "
+Verifying bidirectional relations..."
+                );
 
                 let death_note_relations = services
                     .anime_repository
@@ -151,7 +169,11 @@ async fn e2e_real_anime_has_bidirectional_relations() {
                     "✓ All {} relations are bidirectional",
                     death_note_relations.len()
                 );
-                println!("\n=== Test Complete ===\n");
+                println!(
+                    "
+=== Test Complete ===
+"
+                );
             }) as BoxFuture<'static, ()>
         })
         .await;
@@ -170,8 +192,14 @@ async fn e2e_high_score_anime_gets_proper_tier_not_legacy() {
             Box::pin(async move {
                 let services = helpers::build_test_services_with_pool(pool);
 
-                println!("\n=== Testing High-Score Anime Tier Calculation ===");
-                println!("Importing Fullmetal Alchemist: Brotherhood...\n");
+                println!(
+                    "
+=== Testing High-Score Anime Tier Calculation ==="
+                );
+                println!(
+                    "Importing Fullmetal Alchemist: Brotherhood...
+"
+                );
 
                 let result = services
                     .ingestion_service
@@ -259,9 +287,15 @@ async fn e2e_high_score_anime_gets_proper_tier_not_legacy() {
                     result.anime.age_restriction.unwrap()
                 );
 
-                println!("\n✓ High-score anime has proper tier calculation (not legacy fallback)");
+                println!(
+                    "
+✓ High-score anime has proper tier calculation (not legacy fallback)"
+                );
                 println!("✓ Enrichment service is working (age_restriction populated from Jikan)");
-                println!("=== Test Complete ===\n");
+                println!(
+                    "=== Test Complete ===
+"
+                );
             }) as BoxFuture<'static, ()>
         })
         .await;
@@ -280,8 +314,14 @@ async fn e2e_complex_franchise_all_relations_bidirectional() {
             Box::pin(async move {
                 let services = helpers::build_test_services_with_pool(pool);
 
-                println!("\n=== Testing Complex Franchise Relations ===");
-                println!("Importing Attack on Titan...\n");
+                println!(
+                    "
+=== Testing Complex Franchise Relations ==="
+                );
+                println!(
+                    "Importing Attack on Titan...
+"
+                );
 
                 // Import Season 1
                 let season1_result = services
@@ -305,7 +345,10 @@ async fn e2e_complex_franchise_all_relations_bidirectional() {
                 println!("  - ID: {}", season1_result.anime.id);
 
                 // Start background worker to process relations job
-                println!("\nStarting background worker to discover franchise...");
+                println!(
+                    "
+Starting background worker to discover franchise..."
+                );
                 let worker = services.background_worker.clone();
                 let worker_handle = tokio::spawn(async move { worker.run().await });
 
@@ -346,13 +389,19 @@ async fn e2e_complex_franchise_all_relations_bidirectional() {
                     .await
                     .expect("Should get relations");
 
-                println!("\nRelations found:");
+                println!(
+                    "
+Relations found:"
+                );
                 for (related_id, rel_type) in &all_relations {
                     println!("  - {} ({})", related_id, rel_type);
                 }
 
                 // CRITICAL: Verify EVERY relation is bidirectional
-                println!("\nVerifying all relations are bidirectional...");
+                println!(
+                    "
+Verifying all relations are bidirectional..."
+                );
                 let mut bidirectional_count = 0;
                 for (related_id, forward_type) in &all_relations {
                     let reverse_relations = services
@@ -376,7 +425,10 @@ async fn e2e_complex_franchise_all_relations_bidirectional() {
                 println!("✓ All {} relations are bidirectional", bidirectional_count);
 
                 // Verify all discovered anime have proper tier calculation (not legacy)
-                println!("\nVerifying all discovered anime used ingestion service...");
+                println!(
+                    "
+Verifying all discovered anime used ingestion service..."
+                );
                 let mut checked_anime = 0;
                 for (related_id, _) in &all_relations {
                     if let Ok(Some(related_anime)) =
@@ -396,7 +448,11 @@ async fn e2e_complex_franchise_all_relations_bidirectional() {
                     checked_anime
                 );
 
-                println!("\n=== Test Complete ===\n");
+                println!(
+                    "
+=== Test Complete ===
+"
+                );
             }) as BoxFuture<'static, ()>
         })
         .await;
@@ -413,7 +469,8 @@ async fn e2e_relations_discovery_is_idempotent() {
             Box::pin(async move {
                 let services = helpers::build_test_services_with_pool(pool);
 
-                println!("\n=== Testing Idempotent Relations Discovery ===");
+                println!("
+=== Testing Idempotent Relations Discovery ===");
 
                 // Import anime
                 let result = services
@@ -450,10 +507,12 @@ async fn e2e_relations_discovery_is_idempotent() {
                     .expect("Should get relations");
                 let initial_count = initial_relations.len();
 
-                println!("\nInitial relations count: {}", initial_count);
+                println!("
+Initial relations count: {}", initial_count);
 
                 // Re-import the same anime with relations discovery again
-                println!("\nRe-discovering relations...");
+                println!("
+Re-discovering relations...");
                 let _result2 = services
                     .ingestion_service
                     .ingest_anime(
@@ -495,8 +554,10 @@ async fn e2e_relations_discovery_is_idempotent() {
                     initial_count, final_count
                 );
 
-                println!("\n✓ Relations discovery is idempotent (no duplicates created)");
-                println!("=== Test Complete ===\n");
+                println!("
+✓ Relations discovery is idempotent (no duplicates created)");
+                println!("=== Test Complete ===
+");
             }) as BoxFuture<'static, ()>
         })
         .await;

@@ -18,12 +18,24 @@ pub mod sql_types {
     pub struct AnimeType;
 
     #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "image_type"))]
+    pub struct ImageType;
+
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "job_status"))]
     pub struct JobStatus;
 
     #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "media_provider"))]
+    pub struct MediaProvider;
+
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "unified_age_restriction"))]
     pub struct UnifiedAgeRestriction;
+
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "video_type"))]
+    pub struct VideoType;
 
     #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "watching_status"))]
@@ -97,6 +109,33 @@ diesel::table! {
 
 diesel::table! {
     use diesel::sql_types::*;
+    use super::sql_types::MediaProvider;
+    use super::sql_types::ImageType;
+
+    anime_images (id) {
+        id -> Uuid,
+        anime_id -> Uuid,
+        provider -> MediaProvider,
+        provider_image_id -> Nullable<Text>,
+        image_type -> ImageType,
+        is_primary -> Bool,
+        url -> Text,
+        width -> Nullable<Int4>,
+        height -> Nullable<Int4>,
+        aspect_ratio -> Nullable<Float4>,
+        vote_average -> Nullable<Float4>,
+        vote_count -> Nullable<Int4>,
+        #[max_length = 10]
+        language -> Nullable<Varchar>,
+        file_size_bytes -> Nullable<Int8>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        synced_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
     use super::sql_types::AnimeRelationType;
 
     anime_relations (id) {
@@ -113,6 +152,34 @@ diesel::table! {
     anime_studios (anime_id, studio_id) {
         anime_id -> Uuid,
         studio_id -> Uuid,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use super::sql_types::MediaProvider;
+    use super::sql_types::VideoType;
+
+    anime_videos (id) {
+        id -> Uuid,
+        anime_id -> Uuid,
+        provider -> MediaProvider,
+        provider_video_id -> Nullable<Text>,
+        video_type -> VideoType,
+        is_official -> Bool,
+        name -> Text,
+        #[max_length = 50]
+        site -> Varchar,
+        key -> Text,
+        url -> Text,
+        resolution -> Nullable<Int4>,
+        duration_seconds -> Nullable<Int4>,
+        #[max_length = 10]
+        language -> Nullable<Varchar>,
+        published_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        synced_at -> Nullable<Timestamptz>,
     }
 }
 
@@ -226,8 +293,10 @@ diesel::joinable!(anime_external_ids -> anime (anime_id));
 diesel::joinable!(anime_external_ids -> providers (provider_code));
 diesel::joinable!(anime_genres -> anime (anime_id));
 diesel::joinable!(anime_genres -> genres (genre_id));
+diesel::joinable!(anime_images -> anime (anime_id));
 diesel::joinable!(anime_studios -> anime (anime_id));
 diesel::joinable!(anime_studios -> studios (studio_id));
+diesel::joinable!(anime_videos -> anime (anime_id));
 diesel::joinable!(collection_anime -> anime (anime_id));
 diesel::joinable!(collection_anime -> collections (collection_id));
 diesel::joinable!(quality_metrics -> anime (anime_id));
@@ -237,8 +306,10 @@ diesel::allow_tables_to_appear_in_same_query!(
     anime,
     anime_external_ids,
     anime_genres,
+    anime_images,
     anime_relations,
     anime_studios,
+    anime_videos,
     background_jobs,
     collection_anime,
     collections,

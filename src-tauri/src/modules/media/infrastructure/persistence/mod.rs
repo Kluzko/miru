@@ -1,0 +1,5 @@
+mod anime_image_repository_impl;
+mod anime_video_repository_impl;
+
+pub use anime_image_repository_impl::AnimeImageRepositoryImpl;
+pub use anime_video_repository_impl::AnimeVideoRepositoryImpl;

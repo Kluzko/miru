@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 /// Comprehensive tests for Stage 2.1: Relations Refactor
 ///
 /// This test suite verifies:

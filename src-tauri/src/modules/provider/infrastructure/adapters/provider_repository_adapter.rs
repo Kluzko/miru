@@ -4,51 +4,81 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::time::timeout;
+use uuid::Uuid;
 
 use crate::{
-    modules::provider::{
-        domain::{entities::AnimeData, repositories::AnimeProviderRepository},
-        infrastructure::monitoring::health_monitor::{HealthMonitor, HealthMonitorConfig},
-        AnimeProvider,
+    modules::{
+        media::domain::entities::{NewAnimeImage, NewAnimeVideo},
+        provider::{
+            domain::{
+                entities::AnimeData,
+                repositories::{AnimeProviderRepository, MediaProviderRepository},
+            },
+            infrastructure::monitoring::health_monitor::{HealthMonitor, HealthMonitorConfig},
+            AnimeProvider,
+        },
     },
     shared::errors::{AppError, AppResult},
 };
 
-use super::{AniListAdapter, JikanAdapter};
+use super::{AniListAdapter, JikanAdapter, TmdbAdapter};
 
 /// Concrete implementation for provider data access
 pub struct ProviderRepositoryAdapter {
     anilist_adapter: AniListAdapter,
     jikan_adapter: JikanAdapter,
+    tmdb_adapter: Option<TmdbAdapter>,
     health_monitor: Arc<HealthMonitor>,
 }
 
 impl ProviderRepositoryAdapter {
     pub fn new() -> Self {
+        // Load TMDB API key from environment
+        let tmdb_adapter = std::env::var("TMBD_API_KEY")
+            .ok()
+            .map(|api_key| TmdbAdapter::new(api_key));
+
+        if tmdb_adapter.is_none() {
+            log::warn!("TMDB adapter not initialized: TMBD_API_KEY not found in environment");
+        }
+
         Self {
             anilist_adapter: AniListAdapter::new(),
             jikan_adapter: JikanAdapter::new(),
+            tmdb_adapter,
             health_monitor: Arc::new(HealthMonitor::new(HealthMonitorConfig::default())),
         }
     }
 
     pub fn new_with_health_monitor(health_monitor: Arc<HealthMonitor>) -> Self {
+        // Load TMDB API key from environment
+        let tmdb_adapter = std::env::var("TMBD_API_KEY")
+            .ok()
+            .map(|api_key| TmdbAdapter::new(api_key));
+
+        if tmdb_adapter.is_none() {
+            log::warn!("TMDB adapter not initialized: TMBD_API_KEY not found in environment");
+        }
+
         Self {
             anilist_adapter: AniListAdapter::new(),
             jikan_adapter: JikanAdapter::new(),
+            tmdb_adapter,
             health_monitor,
         }
     }
 
     /// Get the appropriate adapter for a provider
-    fn get_adapter(&self, provider: AnimeProvider) -> &dyn ProviderAdapter {
+    fn get_adapter(&self, provider: AnimeProvider) -> Option<&dyn ProviderAdapter> {
         match provider {
-            AnimeProvider::AniList => &self.anilist_adapter,
-            AnimeProvider::Jikan => &self.jikan_adapter,
+            AnimeProvider::AniList => Some(&self.anilist_adapter),
+            AnimeProvider::Jikan => Some(&self.jikan_adapter),
+            AnimeProvider::TMDB => self
+                .tmdb_adapter
+                .as_ref()
+                .map(|a| a as &dyn ProviderAdapter),
             // For unsupported providers, default to Jikan
-            AnimeProvider::Kitsu | AnimeProvider::TMDB | AnimeProvider::AniDB => {
-                &self.jikan_adapter
-            }
+            AnimeProvider::Kitsu | AnimeProvider::AniDB => Some(&self.jikan_adapter),
         }
     }
 }
@@ -61,7 +91,12 @@ impl AnimeProviderRepository for ProviderRepositoryAdapter {
         limit: usize,
         provider: AnimeProvider,
     ) -> AppResult<Vec<AnimeData>> {
-        let adapter = self.get_adapter(provider);
+        let adapter = self.get_adapter(provider).ok_or_else(|| {
+            AppError::ApiError(format!(
+                "Provider {:?} is not available (missing configuration or API key)",
+                provider
+            ))
+        })?;
         let timeout_duration = Duration::from_secs(10);
         let start_time = Instant::now();
 
@@ -97,7 +132,12 @@ impl AnimeProviderRepository for ProviderRepositoryAdapter {
         id: &str,
         provider: AnimeProvider,
     ) -> AppResult<Option<AnimeData>> {
-        let adapter = self.get_adapter(provider);
+        let adapter = self.get_adapter(provider).ok_or_else(|| {
+            AppError::ApiError(format!(
+                "Provider {:?} is not available (missing configuration or API key)",
+                provider
+            ))
+        })?;
         let timeout_duration = Duration::from_secs(8);
         let start_time = Instant::now();
 
@@ -178,5 +218,132 @@ pub trait ProviderAdapter: Send + Sync {
 impl Default for ProviderRepositoryAdapter {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// =============================================================================
+// MEDIA PROVIDER REPOSITORY IMPLEMENTATION
+// =============================================================================
+
+#[async_trait]
+impl MediaProviderRepository for ProviderRepositoryAdapter {
+    async fn fetch_images(
+        &self,
+        provider_anime_id: u32,
+        anime_id: Uuid,
+    ) -> AppResult<Vec<NewAnimeImage>> {
+        // Currently only TMDB supports images
+        let tmdb_adapter = self.tmdb_adapter.as_ref().ok_or_else(|| {
+            AppError::ApiError("TMDB adapter not available (missing TMBD_API_KEY)".to_string())
+        })?;
+
+        let timeout_duration = Duration::from_secs(8);
+        let start_time = Instant::now();
+
+        match timeout(timeout_duration, tmdb_adapter.get_images(provider_anime_id)).await {
+            Ok(result) => match result {
+                Ok(images_response) => {
+                    // Record successful operation
+                    let response_time = start_time.elapsed();
+                    self.health_monitor
+                        .record_success(AnimeProvider::TMDB, response_time)
+                        .await;
+
+                    // Map images using TmdbMapper
+                    use super::tmdb::TmdbMapper;
+                    use crate::modules::media::domain::value_objects::ImageType;
+
+                    let mapper = TmdbMapper::new();
+                    let mut all_images = Vec::new();
+
+                    // Map posters
+                    if let Some(posters) = images_response.posters {
+                        all_images.extend(mapper.map_images(posters, anime_id, ImageType::Poster));
+                    }
+
+                    // Map backdrops
+                    if let Some(backdrops) = images_response.backdrops {
+                        all_images.extend(mapper.map_images(
+                            backdrops,
+                            anime_id,
+                            ImageType::Backdrop,
+                        ));
+                    }
+
+                    // Map logos
+                    if let Some(logos) = images_response.logos {
+                        all_images.extend(mapper.map_images(logos, anime_id, ImageType::Logo));
+                    }
+
+                    Ok(all_images)
+                }
+                Err(e) => {
+                    // Record failed operation
+                    self.health_monitor
+                        .record_failure(AnimeProvider::TMDB)
+                        .await;
+                    Err(e)
+                }
+            },
+            Err(_) => {
+                // Record timeout as failure
+                self.health_monitor
+                    .record_failure(AnimeProvider::TMDB)
+                    .await;
+                Err(AppError::ApiError(format!(
+                    "Timeout fetching images from TMDB after {:?}",
+                    timeout_duration
+                )))
+            }
+        }
+    }
+
+    async fn fetch_videos(
+        &self,
+        provider_anime_id: u32,
+        anime_id: Uuid,
+    ) -> AppResult<Vec<NewAnimeVideo>> {
+        // Currently only TMDB supports videos
+        let tmdb_adapter = self.tmdb_adapter.as_ref().ok_or_else(|| {
+            AppError::ApiError("TMDB adapter not available (missing TMBD_API_KEY)".to_string())
+        })?;
+
+        let timeout_duration = Duration::from_secs(8);
+        let start_time = Instant::now();
+
+        match timeout(timeout_duration, tmdb_adapter.get_videos(provider_anime_id)).await {
+            Ok(result) => match result {
+                Ok(videos) => {
+                    // Record successful operation
+                    let response_time = start_time.elapsed();
+                    self.health_monitor
+                        .record_success(AnimeProvider::TMDB, response_time)
+                        .await;
+
+                    // Map videos using TmdbMapper
+                    use super::tmdb::TmdbMapper;
+
+                    let mapper = TmdbMapper::new();
+                    Ok(mapper.map_videos(videos, anime_id))
+                }
+                Err(e) => {
+                    // Record failed operation
+                    self.health_monitor
+                        .record_failure(AnimeProvider::TMDB)
+                        .await;
+                    Err(e)
+                }
+            },
+            Err(_) => {
+                // Record timeout as failure
+                self.health_monitor
+                    .record_failure(AnimeProvider::TMDB)
+                    .await;
+                Err(AppError::ApiError(format!(
+                    "Timeout fetching videos from TMDB after {:?}",
+                    timeout_duration
+                )))
+            }
+        }
     }
 }

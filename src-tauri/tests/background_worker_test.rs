@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 /// Comprehensive tests for background job processing
 ///
 /// Tests cover:

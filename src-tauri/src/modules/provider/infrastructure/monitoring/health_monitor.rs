@@ -54,6 +54,10 @@ impl HealthMonitor {
             AnimeProvider::Jikan,
             ProviderHealth::new(AnimeProvider::Jikan),
         );
+        provider_health.insert(
+            AnimeProvider::TMDB,
+            ProviderHealth::new(AnimeProvider::TMDB),
+        );
 
         Self {
             provider_health: Arc::new(RwLock::new(provider_health)),

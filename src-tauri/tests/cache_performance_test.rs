@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 use chrono::Utc;
 /// Tests to verify the RelationsCache implementation works correctly
 /// and provides performance improvements

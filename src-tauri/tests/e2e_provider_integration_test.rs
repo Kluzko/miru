@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 /// End-to-End Integration Tests with Real Provider API Calls
 ///
 /// These tests actually call external APIs (AniList, Jikan, etc.) to verify

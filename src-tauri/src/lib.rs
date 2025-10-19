@@ -8,7 +8,7 @@ use modules::{
     anime::{
         application::{ingestion_service::AnimeIngestionService, service::AnimeService},
         domain::services::anime_relations_service::{AnimeRelationsService, RelationsCache},
-        infrastructure::persistence::AnimeRepositoryImpl,
+        infrastructure::persistence::{AnimeRelationsRepositoryImpl, AnimeRepositoryImpl},
         AnimeRepository,
     },
     collection::{
@@ -22,8 +22,14 @@ use modules::{
         },
     },
     jobs::{infrastructure::JobRepositoryImpl, worker::BackgroundWorker},
+    media::{
+        application::{MediaService, MediaSyncService},
+        infrastructure::{AnimeImageRepositoryImpl, AnimeVideoRepositoryImpl},
+        AnimeImageRepository, AnimeVideoRepository,
+    },
     provider::{
         application::service::ProviderService,
+        domain::repositories::{AnimeProviderRepository, MediaProviderRepository},
         infrastructure::adapters::{CacheAdapter, ProviderRepositoryAdapter},
     },
 };
@@ -153,7 +159,17 @@ pub fn run() {
 
             let provider_repo = Arc::new(ProviderRepositoryAdapter::new());
             let cache_repo = Arc::new(CacheAdapter::new());
-            let provider_service = Arc::new(ProviderService::new(provider_repo, cache_repo));
+
+            // Cast to trait objects for dependency injection
+            // ProviderRepositoryAdapter implements both AnimeProviderRepository and MediaProviderRepository
+            let anime_provider_repo: Arc<dyn AnimeProviderRepository> = provider_repo.clone();
+            let media_provider_repo: Arc<dyn MediaProviderRepository> = provider_repo;
+
+            let provider_service = Arc::new(ProviderService::new(
+                anime_provider_repo,
+                cache_repo,
+                media_provider_repo,
+            ));
 
 
 
@@ -168,8 +184,21 @@ pub fn run() {
             };
 
             // Initialize repositories with proper database
-            let anime_repo: Arc<dyn AnimeRepository> = Arc::new(AnimeRepositoryImpl::new(Arc::clone(&database)));
+            // Keep concrete type for AnimeRepositoryImpl as it's needed by AnimeRelationsRepositoryImpl
+            let anime_repo_impl = Arc::new(AnimeRepositoryImpl::new(Arc::clone(&database)));
+            let anime_repo: Arc<dyn AnimeRepository> = anime_repo_impl.clone();
             let collection_repo: Arc<dyn CollectionRepository> = Arc::new(CollectionRepositoryImpl::new(Arc::clone(&database)));
+
+            // Initialize anime relations repository
+            let anime_relations_repo = Arc::new(
+                AnimeRelationsRepositoryImpl::new(Arc::clone(&database), anime_repo_impl.clone())
+            );
+
+            // Initialize media repositories
+            let anime_image_repo: Arc<dyn AnimeImageRepository> =
+                Arc::new(AnimeImageRepositoryImpl::new(Arc::clone(&database)));
+            let anime_video_repo: Arc<dyn AnimeVideoRepository> =
+                Arc::new(AnimeVideoRepositoryImpl::new(Arc::clone(&database)));
 
             // Initialize core services
             let anime_service = Arc::new(AnimeService::new(
@@ -184,6 +213,18 @@ pub fn run() {
 
             let import_service = Arc::new(ImportService::new(
                 Arc::clone(&anime_repo),
+                Arc::clone(&provider_service),
+            ));
+
+            // Initialize media services
+            let media_service = Arc::new(MediaService::new(
+                Arc::clone(&anime_image_repo),
+                Arc::clone(&anime_video_repo),
+            ));
+
+            let media_sync_service = Arc::new(MediaSyncService::new(
+                Arc::clone(&anime_image_repo),
+                Arc::clone(&anime_video_repo),
                 Arc::clone(&provider_service),
             ));
 
@@ -212,6 +253,7 @@ pub fn run() {
                 AnimeRelationsService::new(
                     relations_cache,
                     Some(Arc::clone(&anime_repo)),
+                    Some(Arc::clone(&anime_relations_repo)),
                     Arc::clone(&provider_service),
                     Arc::clone(&ingestion_service),
                 )
@@ -243,6 +285,8 @@ pub fn run() {
             app.manage(import_service);
             app.manage(anime_relations_service);
             app.manage(provider_service);
+            app.manage(media_service);
+            app.manage(media_sync_service);
             app.manage(job_repository);
 
             Ok(())

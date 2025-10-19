@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 /// Test data factories using builder pattern
 ///
 /// Provides convenient methods to create test data with sensible defaults

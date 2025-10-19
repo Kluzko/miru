@@ -24,10 +24,8 @@ import {
 
 import type { AnimeDetailed } from "@/types/bindings";
 import { getTierInfo, hasEnglishTitle } from "@/lib/anime-utils";
-import { animeApi } from "@/features/anime/api";
 import { animeLogger, uiLogger } from "@/lib/logger";
 import { AnimeOverviewTab, AnimeRelationsTab } from "./tabs";
-import { ProviderWarningCard } from "./provider-warning-card";
 
 // import { AnimeRatingModal } from "./anime-rating-modal"; // TODO: Create this component
 
@@ -187,67 +185,8 @@ export function AnimeDetailTabs({
     });
   };
 
-  const handleEnrichProviders = async () => {
-    try {
-      animeLogger.debug("Enriching providers", { animeId: anime.id });
-      const result = await animeApi.enrichProviders(anime.id);
-
-      if (result.success) {
-        animeLogger.success("Providers enriched successfully", {
-          animeId: anime.id,
-          providersAdded: result.providersAdded,
-        });
-        window.location.reload(); // Refresh to show updated data
-      } else {
-        animeLogger.warn("Enrichment completed with errors", {
-          animeId: anime.id,
-          errors: result.errors,
-        });
-      }
-    } catch (error) {
-      animeLogger.error("Failed to enrich providers", error, {
-        animeId: anime.id,
-      });
-    }
-  };
-
-  const handleResyncAnime = async () => {
-    try {
-      animeLogger.debug("Re-syncing anime", { animeId: anime.id });
-      const result = await animeApi.resyncAnime(anime.id, true);
-
-      if (result.success) {
-        animeLogger.success("Anime re-synced successfully", {
-          animeId: anime.id,
-          providersSynced: result.providersSynced,
-        });
-        window.location.reload(); // Refresh to show updated data
-      } else {
-        animeLogger.warn("Re-sync completed with errors", {
-          animeId: anime.id,
-          errors: result.errors,
-        });
-      }
-    } catch (error) {
-      animeLogger.error("Failed to re-sync anime", error, {
-        animeId: anime.id,
-      });
-    }
-  };
-
   return (
     <div className="w-full max-w-6xl mx-auto">
-      {/* Provider Warning Card - Subtle */}
-      <div className="px-4 sm:px-6 pt-2">
-        <div className="mb-2">
-          <ProviderWarningCard
-            anime={anime}
-            onEnrich={handleEnrichProviders}
-            onResync={handleResyncAnime}
-          />
-        </div>
-      </div>
-
       <div className="relative bg-background">
         <div className="px-4 sm:px-6 py-4 sm:py-8">
           <div className="flex flex-col sm:flex-row gap-4 sm:gap-8 items-start">

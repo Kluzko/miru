@@ -33,6 +33,7 @@ export function useAutoEnrichment(animeId: string | undefined) {
 
         if (isCancelled) return;
 
+        // invoke() automatically unwraps Result<T, E>, so we get AutoEnrichResult directly
         if (result.enrichmentPerformed) {
           animeLogger.success("Auto-enrichment completed", {
             animeId,

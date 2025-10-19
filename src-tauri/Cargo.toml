@@ -86,3 +86,4 @@ tauri-plugin-log = "2.7.0"
 # Testing
 tokio-test = "0.4"
 futures = "0.3"
+mockall = "0.13.1"

@@ -34,7 +34,11 @@ impl SearchCriteria {
             preferred_language: Self::detect_language(&query),
             query,
             limit: 20,
-            preferred_providers: vec![AnimeProvider::Jikan, AnimeProvider::AniList],
+            preferred_providers: vec![
+                AnimeProvider::AniList,
+                AnimeProvider::Jikan,
+                AnimeProvider::TMDB,
+            ],
             quality_threshold: 0.7,
             similarity_threshold: 0.8,
             timeout_seconds: 10,

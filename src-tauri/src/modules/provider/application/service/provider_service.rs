@@ -1,8 +1,9 @@
 use crate::modules::anime::domain::entities::anime_detailed::AnimeDetailed;
 use crate::modules::anime::domain::services::data_quality_service::DataQualityService;
+use crate::modules::media::domain::entities::{NewAnimeImage, NewAnimeVideo};
 use crate::modules::provider::domain::entities::anime_data::AnimeData;
 use crate::modules::provider::domain::repositories::{
-    anime_provider_repo::AnimeProviderRepository, cache_repo::CacheRepository,
+    AnimeProviderRepository, CacheRepository, MediaProviderRepository,
 };
 use crate::modules::provider::domain::services::{AnimeSearchService, ProviderSelectionService};
 use crate::modules::provider::domain::value_objects::SearchCriteria;
@@ -12,6 +13,7 @@ use crate::modules::provider::infrastructure::adapters::anilist::{
 use crate::shared::domain::value_objects::AnimeProvider;
 use crate::shared::errors::AppResult;
 use std::sync::Arc;
+use uuid::Uuid;
 
 /// Clean application service for provider operations
 ///
@@ -30,12 +32,15 @@ pub struct ProviderService {
     /// NOTE: Relationship/franchise discovery is ONLY available through AniList
     /// due to superior GraphQL API performance (1 call vs 13+ calls for other providers)
     anilist_adapter: Arc<AniListAdapter>,
+    /// Media provider repository for fetching images and videos
+    media_provider_repository: Arc<dyn MediaProviderRepository>,
 }
 
 impl ProviderService {
     pub fn new(
         provider_repository: Arc<dyn AnimeProviderRepository>,
         cache_repository: Arc<dyn CacheRepository>,
+        media_provider_repository: Arc<dyn MediaProviderRepository>,
     ) -> Self {
         let data_quality_service = Arc::new(DataQualityService::new());
         let provider_selection_service = Arc::new(ProviderSelectionService::new());
@@ -51,6 +56,7 @@ impl ProviderService {
             data_quality_service,
             provider_selection_service,
             anilist_adapter,
+            media_provider_repository,
         }
     }
 
@@ -239,6 +245,54 @@ impl ProviderService {
                 efficiency_multiplier: 37.5, // 15.0 / 0.4
             },
         }
+    }
+
+    // ========================================================================
+    // MEDIA FETCHING METHODS (Images & Videos)
+    // ========================================================================
+
+    /// Fetch anime images from provider
+    ///
+    /// This method fetches images from external providers (currently TMDB only)
+    /// and returns them ready for database insertion. The images are categorized
+    /// by type (poster, backdrop, logo) and include quality metrics.
+    ///
+    /// # Arguments
+    /// * `provider_anime_id` - The anime ID in the provider's system (e.g., TMDB ID)
+    /// * `anime_id` - The UUID of the anime in our database
+    ///
+    /// # Returns
+    /// Vector of NewAnimeImage entities ready for database insertion
+    pub async fn fetch_anime_images(
+        &self,
+        provider_anime_id: u32,
+        anime_id: Uuid,
+    ) -> AppResult<Vec<NewAnimeImage>> {
+        self.media_provider_repository
+            .fetch_images(provider_anime_id, anime_id)
+            .await
+    }
+
+    /// Fetch anime videos from provider
+    ///
+    /// This method fetches videos from external providers (currently TMDB only)
+    /// and returns them ready for database insertion. Videos include trailers,
+    /// teasers, clips, and other promotional content.
+    ///
+    /// # Arguments
+    /// * `provider_anime_id` - The anime ID in the provider's system (e.g., TMDB ID)
+    /// * `anime_id` - The UUID of the anime in our database
+    ///
+    /// # Returns
+    /// Vector of NewAnimeVideo entities ready for database insertion
+    pub async fn fetch_anime_videos(
+        &self,
+        provider_anime_id: u32,
+        anime_id: Uuid,
+    ) -> AppResult<Vec<NewAnimeVideo>> {
+        self.media_provider_repository
+            .fetch_videos(provider_anime_id, anime_id)
+            .await
     }
 }
 

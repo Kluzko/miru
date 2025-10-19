@@ -43,34 +43,34 @@ impl UseCase<DiscoverRelationsCommand, DiscoverRelationsResult> for DiscoverRela
         command: DiscoverRelationsCommand,
     ) -> AppResult<DiscoverRelationsResult> {
         // Find anime
-        let anime = self
-            .anime_repository
-            .find_by_id(command.anime_id)
-            .await?
-            .ok_or_else(|| {
-                AppError::NotFound(format!("Anime with id {} not found", command.anime_id))
-            })?;
+        let Some(anime) = self.anime_repository.find_by_id(command.anime_id).await? else {
+            return Err(AppError::NotFound(format!(
+                "Anime with id {} not found",
+                command.anime_id
+            )));
+        };
 
         // Load into aggregate
         let mut aggregate = AnimeAggregate::from_entity(anime.clone());
 
         // Find the appropriate provider client
-        // For now, use the first matching provider from external_ids
-        let external_id = anime
-            .provider_metadata
-            .external_ids
-            .iter()
-            .next()
-            .ok_or_else(|| AppError::ValidationError("No external IDs available".to_string()))?;
+        let Some(external_id) = anime.provider_metadata.external_ids.iter().next() else {
+            return Err(AppError::ValidationError(
+                "No external IDs available".to_string(),
+            ));
+        };
 
         // Find provider client
-        let provider_client = self
+        let Some(provider_client) = self
             .provider_clients
             .iter()
             .find(|client| client.provider() == *external_id.0)
-            .ok_or_else(|| {
-                AppError::NotFound(format!("Provider client not found for {:?}", external_id.0))
-            })?;
+        else {
+            return Err(AppError::NotFound(format!(
+                "Provider client not found for {:?}",
+                external_id.0
+            )));
+        };
 
         // Fetch relations from provider
         let relations = provider_client.fetch_relations(external_id.1).await?;

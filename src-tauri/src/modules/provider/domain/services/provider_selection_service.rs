@@ -17,7 +17,12 @@ impl ProviderSelectionService {
         let mut health_tracker = HashMap::new();
 
         // Initialize with default configurations
-        let providers = [AnimeProvider::AniList, AnimeProvider::Jikan];
+        // Priority order: AniList (0) > Jikan (1) > TMDB (2)
+        let providers = [
+            AnimeProvider::AniList,
+            AnimeProvider::Jikan,
+            AnimeProvider::TMDB,
+        ];
         for (i, provider) in providers.iter().enumerate() {
             configs.insert(*provider, ProviderConfig::new(*provider, true, i as u32));
             health_tracker.insert(*provider, ProviderHealth::new(*provider));

@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 /// Anime Relations and Data Consistency Integration Tests
 ///
 /// Tests that verify anime relations are properly discovered, stored,

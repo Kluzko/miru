@@ -2,7 +2,8 @@ use tauri_specta::collect_commands;
 
 // Import all command modules
 use crate::modules::{
-    anime::commands::*, collection::commands::*, data_import::commands::*, provider::commands::*,
+    anime::commands::*, collection::commands::*, data_import::commands::*, media::commands::*,
+    provider::commands::*,
 };
 
 /// Single source of truth for all Tauri commands
@@ -36,6 +37,20 @@ pub fn get_all_commands() -> tauri_specta::Commands<tauri::Wry> {
         import_anime_batch,
         validate_anime_titles,
         import_validated_anime,
+        // Media commands
+        get_anime_media,
+        get_anime_images,
+        get_anime_videos,
+        get_primary_images,
+        get_best_quality_images,
+        get_official_videos,
+        get_promotional_videos,
+        get_content_videos,
+        set_primary_image,
+        delete_media_by_provider,
+        get_media_stats,
+        sync_media_from_provider,
+        has_provider_media,
         // Provider commands (AniList-exclusive franchise discovery)
         get_franchise_relations,
         discover_franchise_details,
@@ -50,7 +65,7 @@ macro_rules! generate_handler_list {
     () => {{
         use crate::modules::{
             anime::commands::*, collection::commands::*, data_import::commands::*,
-            provider::commands::*,
+            media::commands::*, provider::commands::*,
         };
 
         tauri::generate_handler![
@@ -80,6 +95,20 @@ macro_rules! generate_handler_list {
             import_anime_batch,
             validate_anime_titles,
             import_validated_anime,
+            // Media commands
+            get_anime_media,
+            get_anime_images,
+            get_anime_videos,
+            get_primary_images,
+            get_best_quality_images,
+            get_official_videos,
+            get_promotional_videos,
+            get_content_videos,
+            set_primary_image,
+            delete_media_by_provider,
+            get_media_stats,
+            sync_media_from_provider,
+            has_provider_media,
             // Provider commands (AniList-exclusive franchise discovery)
             get_franchise_relations,
             discover_franchise_details,

@@ -32,13 +32,12 @@ impl UpdateAnimeScoreHandler {
 impl UseCase<UpdateAnimeScoreCommand, UpdateAnimeScoreResult> for UpdateAnimeScoreHandler {
     async fn execute(&self, command: UpdateAnimeScoreCommand) -> AppResult<UpdateAnimeScoreResult> {
         // Find anime
-        let anime = self
-            .anime_repository
-            .find_by_id(command.anime_id)
-            .await?
-            .ok_or_else(|| {
-                AppError::NotFound(format!("Anime with id {} not found", command.anime_id))
-            })?;
+        let Some(anime) = self.anime_repository.find_by_id(command.anime_id).await? else {
+            return Err(AppError::NotFound(format!(
+                "Anime with id {} not found",
+                command.anime_id
+            )));
+        };
 
         let old_score = anime.score;
 
