@@ -1,22 +1,69 @@
-use miru_lib::modules::provider::{infrastructure::adapters::TmdbAdapter, AnimeProvider};
+//! TMDB Integration Tests
+//!
+//! These tests require a valid TMDB API key to run.
+//!
+//! ## Setup
+//! 1. Create a `.env` file in the project root (if it doesn't exist)
+//! 2. Add your TMDB API key: `TMDB_API_KEY=your_api_key_here`
+//! 3. Get an API key from: <https://www.themoviedb.org/settings/api>
+//!
+//! ## Running the tests
+//! ```bash
+//! cargo test --test tmdb_integration_test
+//! ```
+//!
+//! **Note:** Tests will be skipped if the API key is not configured.
+
+use miru_lib::modules::provider::infrastructure::adapters::TmdbAdapter;
+use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::time::timeout;
 
-// Test configuration
+// ---- Shared test config -----------------------------------------------------
+
 const TEST_TIMEOUT: Duration = Duration::from_secs(10);
-const TEST_API_KEY: &str = "14a032abcf1763ff7568aaf97994df89";
-const POPULAR_ANIME_ID: u32 = 1429; // Attack on Titan - should always exist
+const POPULAR_ANIME_ID: u32 = 1429; // Attack on Titan
 const POPULAR_SEARCH_TERM: &str = "Attack on Titan";
+
+static ENV_INIT: LazyLock<()> = LazyLock::new(|| {
+    let _ = dotenvy::dotenv(); // ok if .env is absent
+});
+
+static TMDB_API_KEY: LazyLock<Option<String>> = LazyLock::new(|| {
+    *ENV_INIT; // ensure .env load attempted
+    std::env::var("TMDB_API_KEY").ok()
+});
+
+/// Returns a TmdbAdapter instance or skips the test if API key is not configured.
+///
+/// This function will check for the TMDB_API_KEY environment variable and:
+/// - If found: Creates and returns a TmdbAdapter
+/// - If not found: Prints a helpful message and exits the test process gracefully
+fn adapter() -> TmdbAdapter {
+    match TMDB_API_KEY.as_ref() {
+        Some(key) => TmdbAdapter::new(key.clone()),
+        None => {
+            eprintln!("\n⚠️  TMDB_API_KEY not found in environment");
+            eprintln!("   To run these tests:");
+            eprintln!("   1. Create a .env file in the project root");
+            eprintln!("   2. Add: TMDB_API_KEY=your_key_here");
+            eprintln!("   3. Get a key from: https://www.themoviedb.org/settings/api\n");
+            std::process::exit(0); // Exit code 0 to skip gracefully
+        }
+    }
+}
+
+// ---- Tests ------------------------------------------------------------------
 
 #[tokio::test]
 async fn test_adapter_creation() {
-    let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
+    let adapter = adapter();
     assert!(adapter.can_make_request_now());
 }
 
 #[tokio::test]
 async fn test_get_tv_show_by_id_success() {
-    let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
+    let adapter = adapter();
 
     let result = timeout(TEST_TIMEOUT, adapter.get_tv_show(POPULAR_ANIME_ID)).await;
 
@@ -40,7 +87,7 @@ async fn test_get_tv_show_by_id_success() {
 
 #[tokio::test]
 async fn test_get_anime_by_id_success() {
-    let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
+    let adapter = adapter();
 
     let result = timeout(
         TEST_TIMEOUT,
@@ -70,16 +117,16 @@ async fn test_get_anime_by_id_success() {
 
 #[tokio::test]
 async fn test_search_anime() {
-    let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
+    let adapter = adapter();
 
     let result = timeout(TEST_TIMEOUT, adapter.search_anime(POPULAR_SEARCH_TERM, 5)).await;
 
     match result {
         Ok(Ok(results)) => {
             println!("✅ Search returned {} results", results.len());
-            if !results.is_empty() {
-                assert!(!results[0].anime.title.main.is_empty());
-                println!("✅ First result: {}", results[0].anime.title.main);
+            if let Some(first) = results.get(0) {
+                assert!(!first.anime.title.main.is_empty());
+                println!("✅ First result: {}", first.anime.title.main);
             }
         }
         Ok(Err(e)) => {
@@ -93,7 +140,7 @@ async fn test_search_anime() {
 
 #[tokio::test]
 async fn test_get_images() {
-    let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
+    let adapter = adapter();
 
     let result = timeout(TEST_TIMEOUT, adapter.get_images(POPULAR_ANIME_ID)).await;
 
@@ -124,7 +171,7 @@ async fn test_get_images() {
 
 #[tokio::test]
 async fn test_get_posters() {
-    let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
+    let adapter = adapter();
 
     let result = timeout(TEST_TIMEOUT, adapter.get_posters(POPULAR_ANIME_ID)).await;
 
@@ -149,7 +196,7 @@ async fn test_get_posters() {
 
 #[tokio::test]
 async fn test_get_backdrops() {
-    let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
+    let adapter = adapter();
 
     let result = timeout(TEST_TIMEOUT, adapter.get_backdrops(POPULAR_ANIME_ID)).await;
 
@@ -174,7 +221,7 @@ async fn test_get_backdrops() {
 
 #[tokio::test]
 async fn test_get_logos() {
-    let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
+    let adapter = adapter();
 
     let result = timeout(TEST_TIMEOUT, adapter.get_logos(POPULAR_ANIME_ID)).await;
 
@@ -196,7 +243,7 @@ async fn test_get_logos() {
 
 #[tokio::test]
 async fn test_get_videos() {
-    let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
+    let adapter = adapter();
 
     let result = timeout(TEST_TIMEOUT, adapter.get_videos(POPULAR_ANIME_ID)).await;
 
@@ -218,7 +265,7 @@ async fn test_get_videos() {
 
 #[tokio::test]
 async fn test_get_trailers() {
-    let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
+    let adapter = adapter();
 
     let result = timeout(TEST_TIMEOUT, adapter.get_trailers(POPULAR_ANIME_ID)).await;
 
@@ -240,7 +287,7 @@ async fn test_get_trailers() {
 
 #[tokio::test]
 async fn test_get_external_ids() {
-    let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
+    let adapter = adapter();
 
     let result = timeout(TEST_TIMEOUT, adapter.get_external_ids(POPULAR_ANIME_ID)).await;
 
@@ -261,7 +308,7 @@ async fn test_get_external_ids() {
 
 #[tokio::test]
 async fn test_find_by_imdb_id() {
-    let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
+    let adapter = adapter();
 
     // Attack on Titan IMDb ID
     let result = timeout(TEST_TIMEOUT, adapter.find_by_imdb_id("tt0988824")).await;
@@ -289,7 +336,7 @@ async fn test_find_by_imdb_id() {
 
 #[tokio::test]
 async fn test_get_popular_japanese_shows() {
-    let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
+    let adapter = adapter();
 
     let result = timeout(TEST_TIMEOUT, adapter.get_popular_japanese_shows(5)).await;
 
@@ -314,7 +361,7 @@ async fn test_get_popular_japanese_shows() {
 
 #[tokio::test]
 async fn test_rate_limiting() {
-    let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
+    let adapter = adapter();
 
     let start = std::time::Instant::now();
 
@@ -332,23 +379,19 @@ async fn test_rate_limiting() {
 
 #[tokio::test]
 async fn test_concurrent_requests() {
-    let adapter = std::sync::Arc::new(TmdbAdapter::new(TEST_API_KEY.to_string()));
+    let adapter = std::sync::Arc::new(adapter());
 
-    let mut handles = vec![];
-
-    // Make 3 concurrent requests
+    let mut handles = Vec::with_capacity(3);
     for i in 0..3 {
         let adapter_clone = adapter.clone();
-        let handle =
-            tokio::spawn(
-                async move { adapter_clone.get_tv_show(POPULAR_ANIME_ID + i as u32).await },
-            );
-        handles.push(handle);
+        handles.push(tokio::spawn(async move {
+            adapter_clone.get_tv_show(POPULAR_ANIME_ID + i as u32).await
+        }));
     }
 
     let mut success_count = 0;
     for handle in handles {
-        match handle.await.unwrap() {
+        match handle.await.expect("task panicked") {
             Ok(_) => success_count += 1,
             Err(e) => println!("⚠️ Concurrent request failed: {}", e),
         }
@@ -364,7 +407,7 @@ mod error_handling_tests {
 
     #[tokio::test]
     async fn test_invalid_id() {
-        let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
+        let adapter = adapter();
         let result = adapter.get_anime_by_id("999999999").await;
 
         match result {
@@ -380,7 +423,7 @@ mod error_handling_tests {
 
     #[tokio::test]
     async fn test_empty_search() {
-        let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
+        let adapter = adapter();
         let result = adapter.search_anime("", 5).await;
 
         match result {
@@ -395,7 +438,7 @@ mod error_handling_tests {
 
     #[tokio::test]
     async fn test_zero_limit() {
-        let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
+        let adapter = adapter();
         let result = adapter.search_anime(POPULAR_SEARCH_TERM, 0).await;
 
         match result {
@@ -411,7 +454,7 @@ mod error_handling_tests {
 
     #[tokio::test]
     async fn test_invalid_imdb_id() {
-        let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
+        let adapter = adapter();
         let result = adapter.find_by_imdb_id("invalid_id").await;
 
         match result {

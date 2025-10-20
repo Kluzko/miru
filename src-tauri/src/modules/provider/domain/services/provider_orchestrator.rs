@@ -192,20 +192,3 @@ impl ProviderOrchestrator {
         all_results
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_provider_selection_with_preferred() {
-        // Test would verify that preferred providers are used when specified
-        // This is a placeholder for the test structure
-    }
-
-    #[test]
-    fn test_provider_selection_auto() {
-        // Test would verify that auto-selection delegates to ProviderSelectionService
-        // This is a placeholder for the test structure
-    }
-}

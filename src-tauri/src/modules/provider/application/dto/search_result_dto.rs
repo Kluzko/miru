@@ -92,20 +92,3 @@ impl From<AnimeData> for SearchResultDTO {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_dto_preserves_quality_metadata() {
-        // Test would verify that all quality metadata is preserved
-        // This is a placeholder for the test structure
-    }
-
-    #[test]
-    fn test_dto_serialization() {
-        // Test would verify that DTO serializes correctly for frontend
-        // This is a placeholder for the test structure
-    }
-}

@@ -1,6 +1,7 @@
 pub mod anime_search_service;
 pub mod provider_orchestrator;
 pub mod provider_selection_service;
+pub mod search_processor;
 pub mod search_results_processor;
 
 // Primary exports

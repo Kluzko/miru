@@ -36,9 +36,11 @@ impl Default for HealthMonitorConfig {
 }
 
 /// Simple health monitor for tracking provider status
+#[derive(Debug)]
 pub struct HealthMonitor {
     provider_health: Arc<RwLock<HashMap<AnimeProvider, ProviderHealth>>>,
-    config: HealthMonitorConfig,
+    // Not used yet — keep but silence the warning
+    _config: HealthMonitorConfig,
 }
 
 impl HealthMonitor {
@@ -61,7 +63,7 @@ impl HealthMonitor {
 
         Self {
             provider_health: Arc::new(RwLock::new(provider_health)),
-            config,
+            _config: config,
         }
     }
 
@@ -114,8 +116,8 @@ impl HealthMonitor {
             .map(|(provider, health)| (*provider, health.priority_score()))
             .collect();
 
-        // Sort by priority score (highest first)
-        providers.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        // Sort by priority score (highest first) using total_cmp for robustness
+        providers.sort_by(|a, b| b.1.total_cmp(&a.1));
 
         providers
             .into_iter()

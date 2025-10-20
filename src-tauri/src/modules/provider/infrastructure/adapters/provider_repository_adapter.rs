@@ -37,12 +37,12 @@ pub struct ProviderRepositoryAdapter {
 impl ProviderRepositoryAdapter {
     pub fn new() -> Self {
         // Load TMDB API key from environment
-        let tmdb_adapter = std::env::var("TMBD_API_KEY")
+        let tmdb_adapter = std::env::var("TMDB_API_KEY")
             .ok()
             .map(|api_key| TmdbAdapter::new(api_key));
 
         if tmdb_adapter.is_none() {
-            log::warn!("TMDB adapter not initialized: TMBD_API_KEY not found in environment");
+            log::warn!("TMDB adapter not initialized: TMDB_API_KEY not found in environment");
         }
 
         Self {
@@ -55,12 +55,12 @@ impl ProviderRepositoryAdapter {
 
     pub fn new_with_health_monitor(health_monitor: Arc<HealthMonitor>) -> Self {
         // Load TMDB API key from environment
-        let tmdb_adapter = std::env::var("TMBD_API_KEY")
+        let tmdb_adapter = std::env::var("TMDB_API_KEY")
             .ok()
             .map(|api_key| TmdbAdapter::new(api_key));
 
         if tmdb_adapter.is_none() {
-            log::warn!("TMDB adapter not initialized: TMBD_API_KEY not found in environment");
+            log::warn!("TMDB adapter not initialized: TMDB_API_KEY not found in environment");
         }
 
         Self {
@@ -234,7 +234,7 @@ impl MediaProviderRepository for ProviderRepositoryAdapter {
     ) -> AppResult<Vec<NewAnimeImage>> {
         // Currently only TMDB supports images
         let tmdb_adapter = self.tmdb_adapter.as_ref().ok_or_else(|| {
-            AppError::ApiError("TMDB adapter not available (missing TMBD_API_KEY)".to_string())
+            AppError::ApiError("TMDB adapter not available (missing TMDB_API_KEY)".to_string())
         })?;
 
         let timeout_duration = Duration::from_secs(8);
@@ -305,7 +305,7 @@ impl MediaProviderRepository for ProviderRepositoryAdapter {
     ) -> AppResult<Vec<NewAnimeVideo>> {
         // Currently only TMDB supports videos
         let tmdb_adapter = self.tmdb_adapter.as_ref().ok_or_else(|| {
-            AppError::ApiError("TMDB adapter not available (missing TMBD_API_KEY)".to_string())
+            AppError::ApiError("TMDB adapter not available (missing TMDB_API_KEY)".to_string())
         })?;
 
         let timeout_duration = Duration::from_secs(8);

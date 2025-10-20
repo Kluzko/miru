@@ -104,13 +104,7 @@ impl AnimeProviderRepository for CachingRepositoryDecorator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::{
-        anime::domain::entities::anime_detailed::AnimeDetailed,
-        provider::domain::{
-            entities::{AnimeData, DataQuality, DataSource},
-            repositories::CacheStats,
-        },
-    };
+    use crate::modules::provider::domain::{entities::AnimeData, repositories::CacheStats};
     use std::sync::Mutex;
 
     // Mock implementations for testing
@@ -170,10 +164,6 @@ mod tests {
 
         fn set_search_cache(&self, data: Vec<AnimeData>) {
             *self.search_results.lock().unwrap() = Some(data);
-        }
-
-        fn set_details_cache(&self, data: AnimeData) {
-            *self.details_results.lock().unwrap() = Some(data);
         }
     }
 

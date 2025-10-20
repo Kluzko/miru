@@ -184,20 +184,3 @@ impl AnimeSearchService {
         self.quality_service.merge_anime_data(all_data)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_service_creation() {
-        // Test would verify that service can be created with proper dependencies
-        // This is a placeholder for the test structure
-    }
-
-    #[tokio::test]
-    async fn test_search_workflow() {
-        // Test would verify the complete search workflow
-        // This is a placeholder for the test structure
-    }
-}
