@@ -1,10 +1,7 @@
 //! Integration tests for AniList adapter
 //! Tests that actually call the API (with retries and timeouts)
 
-use miru_lib::modules::provider::{
-    infrastructure::adapters::{AniListAdapter, ProviderAdapter},
-    AnimeProvider,
-};
+use miru_lib::modules::provider::infrastructure::adapters::AniListAdapter;
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -14,9 +11,8 @@ const POPULAR_ANIME_ID: u32 = 21; // One Piece - should always exist
 const POPULAR_SEARCH_TERM: &str = "Attack on Titan";
 
 #[tokio::test]
-async fn test_provider_adapter_trait_implementation() {
+async fn test_adapter_creation() {
     let adapter = AniListAdapter::new();
-    assert_eq!(adapter.get_provider_type(), AnimeProvider::AniList);
     assert!(adapter.can_make_request_now());
 }
 
@@ -74,7 +70,7 @@ async fn test_get_anime_by_id_not_found() {
 }
 
 #[tokio::test]
-async fn test_search_anime_basic() {
+async fn test_search_anime() {
     let adapter = AniListAdapter::new();
 
     let result = timeout(TEST_TIMEOUT, adapter.search_anime(POPULAR_SEARCH_TERM, 5)).await;
@@ -97,128 +93,51 @@ async fn test_search_anime_basic() {
 }
 
 #[tokio::test]
-async fn test_get_anime_full() {
+async fn test_search_empty_query() {
     let adapter = AniListAdapter::new();
 
-    let result = timeout(TEST_TIMEOUT, adapter.get_anime_full(POPULAR_ANIME_ID)).await;
+    let result = adapter.search_anime("", 5).await;
 
     match result {
-        Ok(Ok(Some(anime))) => {
-            assert!(!anime.anime.title.is_empty());
-            println!(
-                "✅ Successfully retrieved full anime data: {}",
-                anime.anime.title
-            );
+        Ok(results) => {
+            println!("✅ Empty search returned {} results", results.len());
         }
-        Ok(Ok(None)) => {
-            println!("⚠️ Full anime data not found");
-        }
-        Ok(Err(e)) => {
-            println!("⚠️ Full anime API error: {}", e);
-        }
-        Err(_) => {
-            panic!("❌ Full anime test timed out after {:?}", TEST_TIMEOUT);
-        }
-    }
-}
-
-#[tokio::test]
-async fn test_get_season_now() {
-    let adapter = AniListAdapter::new();
-
-    let result = timeout(TEST_TIMEOUT, adapter.get_season_now(3)).await;
-
-    match result {
-        Ok(Ok(results)) => {
-            println!("✅ Current season returned {} results", results.len());
-            for anime in results.iter().take(3) {
-                println!("  - {}", anime.anime.title);
-            }
-        }
-        Ok(Err(e)) => {
-            println!("⚠️ Current season API error: {}", e);
-        }
-        Err(_) => {
-            panic!("❌ Current season test timed out after {:?}", TEST_TIMEOUT);
-        }
-    }
-}
-
-#[tokio::test]
-async fn test_get_season_upcoming() {
-    let adapter = AniListAdapter::new();
-
-    let result = timeout(TEST_TIMEOUT, adapter.get_season_upcoming(3)).await;
-
-    match result {
-        Ok(Ok(results)) => {
-            println!("✅ Upcoming season returned {} results", results.len());
-            for anime in results.iter().take(3) {
-                println!("  - {}", anime.anime.title);
-            }
-        }
-        Ok(Err(e)) => {
-            println!("⚠️ Upcoming season API error: {}", e);
-        }
-        Err(_) => {
-            panic!("❌ Upcoming season test timed out after {:?}", TEST_TIMEOUT);
-        }
-    }
-}
-
-#[tokio::test]
-async fn test_search_anime_basic_trait() {
-    let adapter = AniListAdapter::new();
-
-    let result = timeout(
-        TEST_TIMEOUT,
-        adapter.search_anime_basic(POPULAR_SEARCH_TERM, 3),
-    )
-    .await;
-
-    match result {
-        Ok(Ok(results)) => {
-            println!("✅ Basic search (trait) returned {} results", results.len());
-        }
-        Ok(Err(e)) => {
-            println!("⚠️ Basic search (trait) API error: {}", e);
-        }
-        Err(_) => {
-            panic!("❌ Basic search (trait) timed out after {:?}", TEST_TIMEOUT);
+        Err(e) => {
+            println!("✅ Empty search returned error: {}", e);
         }
     }
 }
 
 #[tokio::test]
 async fn test_rate_limiting() {
-    let adapter = AniListAdapter::with_rate_limit(0.5, 1); // Very slow rate
+    let adapter = AniListAdapter::new();
 
     let start = std::time::Instant::now();
 
-    // Make two requests - second should be rate limited
-    let _first = adapter.get_anime_by_id("1").await;
-    let _second = adapter.get_anime_by_id("2").await;
+    // Make multiple rapid requests
+    for i in 0..3 {
+        let id = (POPULAR_ANIME_ID + i).to_string();
+        let _ = adapter.get_anime_by_id(&id).await;
+    }
 
     let duration = start.elapsed();
+    println!("✅ Made 3 requests in {:?}", duration);
 
-    // Should take at least 2 seconds due to rate limiting (0.5 req/sec)
-    if duration >= Duration::from_millis(1500) {
-        println!("✅ Rate limiting working correctly: {:?}", duration);
-    } else {
-        println!("⚠️ Rate limiting may not be working: {:?}", duration);
-    }
+    // AniList has rate limiting (90 req/min), so this should complete
+    assert!(duration < Duration::from_secs(30));
 }
 
 #[tokio::test]
 async fn test_concurrent_requests() {
     let adapter = std::sync::Arc::new(AniListAdapter::new());
+
     let mut handles = vec![];
 
     // Make 3 concurrent requests
-    for i in 1..=3 {
+    for i in 0..3 {
         let adapter_clone = adapter.clone();
-        let handle =
-            tokio::spawn(async move { adapter_clone.get_anime_by_id(&i.to_string()).await });
+        let id = (POPULAR_ANIME_ID + i).to_string();
+        let handle = tokio::spawn(async move { adapter_clone.get_anime_by_id(&id).await });
         handles.push(handle);
     }
 
@@ -231,7 +150,6 @@ async fn test_concurrent_requests() {
     }
 
     println!("✅ Concurrent requests: {}/3 succeeded", success_count);
-    // At least one should succeed unless there are serious network issues
     assert!(success_count > 0);
 }
 
@@ -242,34 +160,17 @@ mod error_handling_tests {
     #[tokio::test]
     async fn test_invalid_id_format() {
         let adapter = AniListAdapter::new();
-
-        let result = adapter.get_anime_by_id("invalid_id").await;
+        let result = adapter.get_anime_by_id("not_a_number").await;
 
         match result {
-            Ok(None) => println!("✅ Invalid ID handled gracefully"),
             Err(e) => {
-                println!("✅ Invalid ID returned error: {}", e);
-                // This is also acceptable
+                println!("✅ Invalid ID format returned error: {}", e);
+            }
+            Ok(None) => {
+                println!("✅ Invalid ID format returned None");
             }
             Ok(Some(_)) => {
-                panic!("❌ Invalid ID should not return anime data");
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn test_empty_search() {
-        let adapter = AniListAdapter::new();
-
-        let result = adapter.search_anime("", 5).await;
-
-        match result {
-            Ok(results) => {
-                println!("✅ Empty search returned {} results", results.len());
-            }
-            Err(e) => {
-                println!("✅ Empty search returned error: {}", e);
-                // Some APIs might reject empty searches
+                panic!("❌ Should not return anime for invalid ID format");
             }
         }
     }
@@ -277,7 +178,6 @@ mod error_handling_tests {
     #[tokio::test]
     async fn test_zero_limit() {
         let adapter = AniListAdapter::new();
-
         let result = adapter.search_anime(POPULAR_SEARCH_TERM, 0).await;
 
         match result {
@@ -287,7 +187,6 @@ mod error_handling_tests {
             }
             Err(e) => {
                 println!("✅ Zero limit returned error: {}", e);
-                // Some APIs might reject zero limits
             }
         }
     }

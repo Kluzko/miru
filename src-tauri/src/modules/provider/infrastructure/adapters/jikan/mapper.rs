@@ -15,18 +15,6 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 /// Main mapper trait for converting provider-specific data to domain AnimeData
-pub trait AnimeMapper<T> {
-    /// Map provider data to domain AnimeData
-    fn map_to_anime_data(&self, source: T) -> Result<AnimeData, AppError>;
-
-    /// Map a list of provider data to domain AnimeData
-    fn map_to_anime_data_list(&self, sources: Vec<T>) -> Result<Vec<AnimeData>, AppError> {
-        sources
-            .into_iter()
-            .map(|source| self.map_to_anime_data(source))
-            .collect()
-    }
-}
 
 /// Capability trait to describe what each adapter can provide
 pub trait AdapterCapabilities {
@@ -231,8 +219,8 @@ impl JikanMapper {
     }
 }
 
-impl AnimeMapper<Anime> for JikanMapper {
-    fn map_to_anime_data(&self, source: Anime) -> Result<AnimeData, AppError> {
+impl JikanMapper {
+    pub fn map_to_anime_data(&self, source: Anime) -> Result<AnimeData, AppError> {
         let now = Utc::now();
 
         // Create provider metadata

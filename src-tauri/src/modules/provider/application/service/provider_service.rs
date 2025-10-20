@@ -1,14 +1,15 @@
 use crate::modules::anime::domain::entities::anime_detailed::AnimeDetailed;
 use crate::modules::anime::domain::services::data_quality_service::DataQualityService;
 use crate::modules::media::domain::entities::{NewAnimeImage, NewAnimeVideo};
+use crate::modules::provider::application::dto::SearchResultDTO;
 use crate::modules::provider::domain::entities::anime_data::AnimeData;
 use crate::modules::provider::domain::repositories::{
-    AnimeProviderRepository, CacheRepository, MediaProviderRepository,
+    AnimeProviderRepository, MediaProviderRepository, RelationshipProviderRepository,
 };
 use crate::modules::provider::domain::services::{AnimeSearchService, ProviderSelectionService};
 use crate::modules::provider::domain::value_objects::SearchCriteria;
-use crate::modules::provider::infrastructure::adapters::anilist::{
-    adapter::AniListAdapter, models::CategorizedFranchise, models::FranchiseRelation,
+use crate::modules::provider::infrastructure::adapters::anilist::models::{
+    CategorizedFranchise, FranchiseRelation,
 };
 use crate::shared::domain::value_objects::AnimeProvider;
 use crate::shared::errors::AppResult;
@@ -28,10 +29,10 @@ pub struct ProviderService {
     anime_search_service: Arc<AnimeSearchService>,
     data_quality_service: Arc<DataQualityService>,
     provider_selection_service: Arc<ProviderSelectionService>,
-    /// AniList adapter for exclusive relationship discovery features
-    /// NOTE: Relationship/franchise discovery is ONLY available through AniList
-    /// due to superior GraphQL API performance (1 call vs 13+ calls for other providers)
-    anilist_adapter: Arc<AniListAdapter>,
+    /// Relationship provider repository for fetching anime relationships and franchise data
+    /// NOTE: Currently uses AniList due to superior GraphQL API performance
+    /// (1 call vs 13+ calls for other providers), but abstracted for future flexibility
+    relationship_repository: Arc<dyn RelationshipProviderRepository>,
     /// Media provider repository for fetching images and videos
     media_provider_repository: Arc<dyn MediaProviderRepository>,
 }
@@ -39,29 +40,29 @@ pub struct ProviderService {
 impl ProviderService {
     pub fn new(
         provider_repository: Arc<dyn AnimeProviderRepository>,
-        cache_repository: Arc<dyn CacheRepository>,
         media_provider_repository: Arc<dyn MediaProviderRepository>,
+        relationship_repository: Arc<dyn RelationshipProviderRepository>,
     ) -> Self {
         let data_quality_service = Arc::new(DataQualityService::new());
         let provider_selection_service = Arc::new(ProviderSelectionService::new());
         let anime_search_service = Arc::new(AnimeSearchService::new(
             provider_repository,
-            cache_repository,
             (*data_quality_service).clone(),
         ));
-        let anilist_adapter = Arc::new(AniListAdapter::new());
 
         Self {
             anime_search_service,
             data_quality_service,
             provider_selection_service,
-            anilist_adapter,
+            relationship_repository,
             media_provider_repository,
         }
     }
 
     /// Search anime across providers with smart data merging
-    pub async fn search_anime(&self, query: &str, limit: usize) -> AppResult<Vec<AnimeDetailed>> {
+    ///
+    /// Returns SearchResultDTO which preserves quality metadata.
+    pub async fn search_anime(&self, query: &str, limit: usize) -> AppResult<Vec<SearchResultDTO>> {
         let criteria = SearchCriteria::new(query.to_string()).with_limit(limit);
         let available_providers = self.provider_selection_service.get_available_providers();
 
@@ -70,11 +71,37 @@ impl ProviderService {
             .search(&criteria, &available_providers)
             .await?;
 
-        // Convert AnimeData to AnimeDetailed
+        // Convert AnimeData to SearchResultDTO (preserves quality metadata!)
+        let results = anime_data_results
+            .into_iter()
+            .map(SearchResultDTO::from)
+            .collect();
+        Ok(results)
+    }
+
+    /// Search anime (internal version) - returns AnimeDetailed without metadata
+    ///
+    /// This is for internal services that don't need quality metadata.
+    /// External API consumers should use `search_anime()` instead.
+    pub async fn search_anime_internal(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> AppResult<Vec<AnimeDetailed>> {
+        let criteria = SearchCriteria::new(query.to_string()).with_limit(limit);
+        let available_providers = self.provider_selection_service.get_available_providers();
+
+        let anime_data_results = self
+            .anime_search_service
+            .search(&criteria, &available_providers)
+            .await?;
+
+        // Convert AnimeData to AnimeDetailed (discard metadata for internal use)
         let results = anime_data_results
             .into_iter()
             .map(|data| data.anime)
             .collect();
+
         Ok(results)
     }
 
@@ -176,8 +203,8 @@ impl ProviderService {
     ///
     /// Performance: ~0.4-1.0 seconds vs 10+ seconds with recursive REST calls
     pub async fn get_anime_relations(&self, anime_id: u32) -> AppResult<Vec<(u32, String)>> {
-        self.anilist_adapter
-            .get_anime_relations_optimized(anime_id)
+        self.relationship_repository
+            .get_anime_relations(anime_id)
             .await
     }
 
@@ -191,8 +218,8 @@ impl ProviderService {
         &self,
         anime_id: u32,
     ) -> AppResult<Vec<FranchiseRelation>> {
-        self.anilist_adapter
-            .discover_complete_franchise_with_details(anime_id)
+        self.relationship_repository
+            .discover_franchise_details(anime_id)
             .await
     }
 
@@ -211,7 +238,7 @@ impl ProviderService {
         &self,
         anime_id: u32,
     ) -> AppResult<CategorizedFranchise> {
-        self.anilist_adapter
+        self.relationship_repository
             .discover_categorized_franchise(anime_id)
             .await
     }

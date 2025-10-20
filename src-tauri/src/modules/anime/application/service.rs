@@ -31,7 +31,10 @@ impl AnimeService {
 
     pub async fn search_anime(&self, query: &str) -> AppResult<Vec<AnimeDetailed>> {
         // Use comprehensive search which aggregates data from multiple providers
-        let comprehensive_results = self.provider_service.search_anime(query, 20).await?;
+        let comprehensive_results = self
+            .provider_service
+            .search_anime_internal(query, 20)
+            .await?;
 
         if !comprehensive_results.is_empty() {
             // Save new anime to database (the repository will handle duplicates)
@@ -71,7 +74,10 @@ impl AnimeService {
 
     pub async fn get_top_anime(&self, limit: usize) -> AppResult<Vec<AnimeDetailed>> {
         // Always fetch fresh data via provider service for top anime
-        let anime_list = self.provider_service.search_anime("popular", limit).await?;
+        let anime_list = self
+            .provider_service
+            .search_anime_internal("popular", limit)
+            .await?;
 
         // Save to database (handling duplicates)
         let mut saved_anime = Vec::new();
@@ -101,7 +107,10 @@ impl AnimeService {
     ) -> AppResult<Vec<AnimeDetailed>> {
         // Fetch via provider service
         let query = format!("{} {} anime", season, year);
-        let anime_list = self.provider_service.search_anime(&query, limit).await?;
+        let anime_list = self
+            .provider_service
+            .search_anime_internal(&query, limit)
+            .await?;
 
         // Save to database (handling duplicates)
         let mut saved_anime = Vec::new();
@@ -155,7 +164,10 @@ impl AnimeService {
     ) -> AppResult<Vec<AnimeDetailed>> {
         log_debug!("External-only search for '{}' with limit {}", query, limit);
 
-        let results = self.provider_service.search_anime(query, limit).await?;
+        let results = self
+            .provider_service
+            .search_anime_internal(query, limit)
+            .await?;
 
         log_info!(
             "External-only search found {} results for '{}'",

@@ -29,8 +29,14 @@ use modules::{
     },
     provider::{
         application::service::ProviderService,
-        domain::repositories::{AnimeProviderRepository, MediaProviderRepository},
-        infrastructure::adapters::{CacheAdapter, ProviderRepositoryAdapter},
+        domain::repositories::{
+            AnimeProviderRepository, CacheRepository, MediaProviderRepository,
+            RelationshipProviderRepository,
+        },
+        infrastructure::{
+            adapters::{CacheAdapter, ProviderRepositoryAdapter},
+            CachingRepositoryDecorator,
+        },
     },
 };
 use shared::{DatabaseHealthMonitor, DatabaseState};
@@ -162,13 +168,20 @@ pub fn run() {
 
             // Cast to trait objects for dependency injection
             // ProviderRepositoryAdapter implements both AnimeProviderRepository and MediaProviderRepository
-            let anime_provider_repo: Arc<dyn AnimeProviderRepository> = provider_repo.clone();
-            let media_provider_repo: Arc<dyn MediaProviderRepository> = provider_repo;
+            let media_provider_repo: Arc<dyn MediaProviderRepository> = provider_repo.clone();
+
+            // Wrap repository with caching decorator (Decorator Pattern)
+            // This makes caching transparent - business logic doesn't need manual cache checks
+            let cache_repo_trait: Arc<dyn CacheRepository> = cache_repo.clone();
+            let relationship_provider_repo: Arc<dyn RelationshipProviderRepository> = provider_repo.clone();
+            let anime_provider_repo: Arc<dyn AnimeProviderRepository> = Arc::new(
+                CachingRepositoryDecorator::new(provider_repo, cache_repo_trait)
+            );
 
             let provider_service = Arc::new(ProviderService::new(
                 anime_provider_repo,
-                cache_repo,
                 media_provider_repo,
+                relationship_provider_repo,
             ));
 
 

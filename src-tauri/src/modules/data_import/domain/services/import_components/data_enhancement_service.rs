@@ -78,7 +78,10 @@ impl DataEnhancementService {
             let search_query = &anime.title.main;
 
             // First try: Search all providers to find best match
-            if let Ok(provider_results) = self.provider_service.search_anime(search_query, 5).await
+            if let Ok(provider_results) = self
+                .provider_service
+                .search_anime_internal(search_query, 5)
+                .await
             {
                 if let Some(best_match) = self.find_best_match(anime, &provider_results) {
                     self.fill_data_gaps(
@@ -102,8 +105,10 @@ impl DataEnhancementService {
                 );
 
                 // Search again and check ALL results (not just best match) for age_restriction
-                if let Ok(provider_results) =
-                    self.provider_service.search_anime(search_query, 5).await
+                if let Ok(provider_results) = self
+                    .provider_service
+                    .search_anime_internal(search_query, 5)
+                    .await
                 {
                     for result in provider_results.iter() {
                         if result.age_restriction.is_some() {

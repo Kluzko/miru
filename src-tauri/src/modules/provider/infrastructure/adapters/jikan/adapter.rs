@@ -1,11 +1,6 @@
-use async_trait::async_trait;
-
 use crate::{
-    modules::provider::infrastructure::{
-        adapters::{jikan::mapper::AnimeMapper, provider_repository_adapter::ProviderAdapter},
-        http_client::RateLimitClient,
-    },
-    modules::provider::{domain::entities::anime_data::AnimeData, AnimeProvider},
+    modules::provider::domain::entities::anime_data::AnimeData,
+    modules::provider::infrastructure::http_client::RateLimitClient,
     shared::errors::{AppError, AppResult},
 };
 
@@ -43,9 +38,8 @@ impl JikanAdapter {
     }
 }
 
-#[async_trait]
-impl ProviderAdapter for JikanAdapter {
-    async fn search_anime(&self, query: &str, limit: usize) -> AppResult<Vec<AnimeData>> {
+impl JikanAdapter {
+    pub async fn search_anime(&self, query: &str, limit: usize) -> AppResult<Vec<AnimeData>> {
         let url = format!(
             "{}/anime?q={}&limit={}",
             self.base_url,
@@ -70,7 +64,7 @@ impl ProviderAdapter for JikanAdapter {
         Ok(anime_data)
     }
 
-    async fn get_anime_by_id(&self, id: &str) -> AppResult<Option<AnimeData>> {
+    pub async fn get_anime_by_id(&self, id: &str) -> AppResult<Option<AnimeData>> {
         let anime_id: u32 = id
             .parse()
             .map_err(|_| AppError::ValidationError(format!("Invalid MAL ID: {}", id)))?;
@@ -95,50 +89,6 @@ impl ProviderAdapter for JikanAdapter {
             .map_err(|e| AppError::MappingError(format!("Failed to map Jikan data: {}", e)))?;
         log::info!("Jikan: Found anime by ID '{}'", id);
         Ok(Some(anime_data))
-    }
-
-    async fn get_anime(&self, id: u32) -> AppResult<Option<AnimeData>> {
-        self.get_anime_by_id(&id.to_string()).await
-    }
-
-    async fn get_anime_full(&self, id: u32) -> AppResult<Option<AnimeData>> {
-        // Call the inherent method that gets full details
-        JikanAdapter::get_anime_full(self, id).await
-    }
-
-    async fn search_anime_basic(&self, query: &str, limit: usize) -> AppResult<Vec<AnimeData>> {
-        // Call the actual implementation method
-        self.search_anime(query, limit).await
-    }
-
-    async fn get_season_now(&self, limit: usize) -> AppResult<Vec<AnimeData>> {
-        // Call the inherent method with explicit parameters
-        let anime_list = JikanAdapter::get_season_now(self, Some(limit as u32), None).await?;
-        let anime_data: Result<Vec<_>, _> = anime_list
-            .data
-            .into_iter()
-            .map(|anime| self.mapper.map_to_anime_data(anime))
-            .collect();
-        anime_data.map_err(|e| AppError::MappingError(format!("Failed to map Jikan data: {}", e)))
-    }
-
-    async fn get_season_upcoming(&self, limit: usize) -> AppResult<Vec<AnimeData>> {
-        // Call the inherent method with explicit parameters
-        let anime_list = JikanAdapter::get_season_upcoming(self, Some(limit as u32), None).await?;
-        let anime_data: Result<Vec<_>, _> = anime_list
-            .data
-            .into_iter()
-            .map(|anime| self.mapper.map_to_anime_data(anime))
-            .collect();
-        anime_data.map_err(|e| AppError::MappingError(format!("Failed to map Jikan data: {}", e)))
-    }
-
-    fn get_provider_type(&self) -> AnimeProvider {
-        AnimeProvider::Jikan
-    }
-
-    fn can_make_request_now(&self) -> bool {
-        self.can_make_request_now()
     }
 
     async fn get_anime_relations(&self, id: u32) -> AppResult<Vec<(u32, String)>> {

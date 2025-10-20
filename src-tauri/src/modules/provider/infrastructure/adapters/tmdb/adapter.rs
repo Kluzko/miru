@@ -1,12 +1,10 @@
 use crate::{
+    modules::provider::domain::entities::anime_data::AnimeData,
     modules::provider::infrastructure::{
-        adapters::{provider_repository_adapter::ProviderAdapter, tmdb::mapper::TmdbMapper},
-        http_client::RateLimitClient,
+        adapters::tmdb::mapper::TmdbMapper, http_client::RateLimitClient,
     },
-    modules::provider::{domain::entities::anime_data::AnimeData, AnimeProvider},
     shared::errors::{AppError, AppResult},
 };
-use async_trait::async_trait;
 
 use super::models::*;
 
@@ -61,9 +59,8 @@ impl TmdbAdapter {
     }
 }
 
-#[async_trait]
-impl ProviderAdapter for TmdbAdapter {
-    async fn search_anime(&self, query: &str, limit: usize) -> AppResult<Vec<AnimeData>> {
+impl TmdbAdapter {
+    pub async fn search_anime(&self, query: &str, limit: usize) -> AppResult<Vec<AnimeData>> {
         // TMDB doesn't have anime-specific search, so we search TV shows with Japanese origin
         let params = vec![
             ("query".to_string(), query.to_string()),
@@ -102,7 +99,7 @@ impl ProviderAdapter for TmdbAdapter {
         Ok(anime_data)
     }
 
-    async fn get_anime_by_id(&self, id: &str) -> AppResult<Option<AnimeData>> {
+    pub async fn get_anime_by_id(&self, id: &str) -> AppResult<Option<AnimeData>> {
         let tv_id: u32 = id
             .parse()
             .map_err(|_| AppError::ValidationError(format!("Invalid TMDB ID: {}", id)))?;
@@ -127,63 +124,6 @@ impl ProviderAdapter for TmdbAdapter {
 
         log::info!("TMDB: Found TV show by ID '{}'", id);
         Ok(Some(anime_data))
-    }
-
-    async fn get_anime(&self, id: u32) -> AppResult<Option<AnimeData>> {
-        self.get_anime_by_id(&id.to_string()).await
-    }
-
-    async fn get_anime_full(&self, id: u32) -> AppResult<Option<AnimeData>> {
-        TmdbAdapter::get_tv_show_full(self, id).await
-    }
-
-    async fn search_anime_basic(&self, query: &str, limit: usize) -> AppResult<Vec<AnimeData>> {
-        self.search_anime(query, limit).await
-    }
-
-    async fn get_season_now(&self, limit: usize) -> AppResult<Vec<AnimeData>> {
-        // Get currently airing TV shows from Japan
-        let url = self.build_url_with_params(
-            "/discover/tv",
-            &[
-                ("with_origin_country".to_string(), "JP".to_string()),
-                ("sort_by".to_string(), "popularity.desc".to_string()),
-                ("page".to_string(), "1".to_string()),
-                ("language".to_string(), "en-US".to_string()),
-            ],
-        );
-
-        log::info!("TMDB: Getting current season anime");
-
-        let tmdb_response: TmdbSearchResponse = self.http_client.get(&url).await?;
-
-        let anime_shows: Vec<TvShow> = tmdb_response.results.into_iter().take(limit).collect();
-
-        let anime_data: Result<Vec<_>, _> = anime_shows
-            .into_iter()
-            .map(|show| self.mapper.map_to_anime_data(show))
-            .collect();
-
-        anime_data.map_err(|e| AppError::MappingError(format!("Failed to map TMDB data: {}", e)))
-    }
-
-    async fn get_season_upcoming(&self, _limit: usize) -> AppResult<Vec<AnimeData>> {
-        // TMDB doesn't have a direct "upcoming" endpoint, return empty for now
-        log::info!("TMDB: Upcoming anime not supported, returning empty list");
-        Ok(vec![])
-    }
-
-    fn get_provider_type(&self) -> AnimeProvider {
-        AnimeProvider::TMDB
-    }
-
-    fn can_make_request_now(&self) -> bool {
-        self.can_make_request_now()
-    }
-
-    async fn get_anime_relations(&self, _id: u32) -> AppResult<Vec<(u32, String)>> {
-        // TMDB doesn't have anime relations, return empty
-        Ok(vec![])
     }
 }
 

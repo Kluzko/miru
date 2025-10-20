@@ -1,0 +1,3 @@
+mod caching_repository_decorator;
+
+pub use caching_repository_decorator::CachingRepositoryDecorator;

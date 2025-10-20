@@ -12,7 +12,10 @@ use crate::{
         provider::{
             domain::{
                 entities::AnimeData,
-                repositories::{AnimeProviderRepository, MediaProviderRepository},
+                repositories::{
+                    AnimeProviderRepository, MediaProviderRepository,
+                    RelationshipProviderRepository,
+                },
             },
             infrastructure::monitoring::health_monitor::{HealthMonitor, HealthMonitorConfig},
             AnimeProvider,
@@ -68,17 +71,50 @@ impl ProviderRepositoryAdapter {
         }
     }
 
-    /// Get the appropriate adapter for a provider
-    fn get_adapter(&self, provider: AnimeProvider) -> Option<&dyn ProviderAdapter> {
+    /// Helper to execute search on specific adapter
+    async fn search_with_adapter(
+        &self,
+        query: &str,
+        limit: usize,
+        provider: AnimeProvider,
+    ) -> AppResult<Vec<AnimeData>> {
         match provider {
-            AnimeProvider::AniList => Some(&self.anilist_adapter),
-            AnimeProvider::Jikan => Some(&self.jikan_adapter),
-            AnimeProvider::TMDB => self
-                .tmdb_adapter
-                .as_ref()
-                .map(|a| a as &dyn ProviderAdapter),
+            AnimeProvider::AniList => self.anilist_adapter.search_anime(query, limit).await,
+            AnimeProvider::Jikan => self.jikan_adapter.search_anime(query, limit).await,
+            AnimeProvider::TMDB => {
+                if let Some(ref tmdb) = self.tmdb_adapter {
+                    tmdb.search_anime(query, limit).await
+                } else {
+                    Err(AppError::ApiError("TMDB adapter not available".to_string()))
+                }
+            }
             // For unsupported providers, default to Jikan
-            AnimeProvider::Kitsu | AnimeProvider::AniDB => Some(&self.jikan_adapter),
+            AnimeProvider::Kitsu | AnimeProvider::AniDB => {
+                self.jikan_adapter.search_anime(query, limit).await
+            }
+        }
+    }
+
+    /// Helper to get anime by ID from specific adapter
+    async fn get_by_id_with_adapter(
+        &self,
+        id: &str,
+        provider: AnimeProvider,
+    ) -> AppResult<Option<AnimeData>> {
+        match provider {
+            AnimeProvider::AniList => self.anilist_adapter.get_anime_by_id(id).await,
+            AnimeProvider::Jikan => self.jikan_adapter.get_anime_by_id(id).await,
+            AnimeProvider::TMDB => {
+                if let Some(ref tmdb) = self.tmdb_adapter {
+                    tmdb.get_anime_by_id(id).await
+                } else {
+                    Err(AppError::ApiError("TMDB adapter not available".to_string()))
+                }
+            }
+            // For unsupported providers, default to Jikan
+            AnimeProvider::Kitsu | AnimeProvider::AniDB => {
+                self.jikan_adapter.get_anime_by_id(id).await
+            }
         }
     }
 }
@@ -91,16 +127,15 @@ impl AnimeProviderRepository for ProviderRepositoryAdapter {
         limit: usize,
         provider: AnimeProvider,
     ) -> AppResult<Vec<AnimeData>> {
-        let adapter = self.get_adapter(provider).ok_or_else(|| {
-            AppError::ApiError(format!(
-                "Provider {:?} is not available (missing configuration or API key)",
-                provider
-            ))
-        })?;
         let timeout_duration = Duration::from_secs(10);
         let start_time = Instant::now();
 
-        match timeout(timeout_duration, adapter.search_anime(query, limit)).await {
+        match timeout(
+            timeout_duration,
+            self.search_with_adapter(query, limit, provider),
+        )
+        .await
+        {
             Ok(result) => match result {
                 Ok(anime_data) => {
                     // Record successful operation
@@ -132,16 +167,10 @@ impl AnimeProviderRepository for ProviderRepositoryAdapter {
         id: &str,
         provider: AnimeProvider,
     ) -> AppResult<Option<AnimeData>> {
-        let adapter = self.get_adapter(provider).ok_or_else(|| {
-            AppError::ApiError(format!(
-                "Provider {:?} is not available (missing configuration or API key)",
-                provider
-            ))
-        })?;
         let timeout_duration = Duration::from_secs(8);
         let start_time = Instant::now();
 
-        match timeout(timeout_duration, adapter.get_anime_by_id(id)).await {
+        match timeout(timeout_duration, self.get_by_id_with_adapter(id, provider)).await {
             Ok(result) => match result {
                 Ok(anime_data) => {
                     // Record successful operation
@@ -184,35 +213,6 @@ impl AnimeProviderRepository for ProviderRepositoryAdapter {
             true
         }
     }
-}
-
-/// Trait for individual provider adapters
-#[async_trait]
-pub trait ProviderAdapter: Send + Sync {
-    // Core anime retrieval functions
-    async fn search_anime(&self, query: &str, limit: usize) -> AppResult<Vec<AnimeData>>;
-    async fn get_anime_by_id(&self, id: &str) -> AppResult<Option<AnimeData>>;
-    async fn get_anime(&self, id: u32) -> AppResult<Option<AnimeData>>;
-    async fn get_anime_full(&self, id: u32) -> AppResult<Option<AnimeData>>;
-
-    // Search functions
-    async fn search_anime_basic(&self, query: &str, limit: usize) -> AppResult<Vec<AnimeData>>;
-
-    // Seasonal content
-    async fn get_season_now(&self, limit: usize) -> AppResult<Vec<AnimeData>>;
-    async fn get_season_upcoming(&self, limit: usize) -> AppResult<Vec<AnimeData>>;
-
-    // Relations - NOTE: Only AniList provides efficient relationship discovery
-    // Other providers should NOT implement this method due to performance limitations
-    async fn get_anime_relations(&self, _id: u32) -> AppResult<Vec<(u32, String)>> {
-        // Default implementation returns empty for non-AniList providers
-        // This is intentional - relationship discovery is AniList-exclusive
-        Ok(Vec::new())
-    }
-
-    // Provider information
-    fn get_provider_type(&self) -> AnimeProvider;
-    fn can_make_request_now(&self) -> bool;
 }
 
 impl Default for ProviderRepositoryAdapter {
@@ -345,5 +345,44 @@ impl MediaProviderRepository for ProviderRepositoryAdapter {
                 )))
             }
         }
+    }
+}
+
+/// Implementation of RelationshipProviderRepository
+///
+/// Currently delegates all relationship queries to AniList adapter,
+/// as AniList provides the most comprehensive relationship data through GraphQL.
+#[async_trait]
+impl RelationshipProviderRepository for ProviderRepositoryAdapter {
+    async fn get_anime_relations(&self, anime_id: u32) -> AppResult<Vec<(u32, String)>> {
+        // Delegate to AniList adapter
+        self.anilist_adapter
+            .get_anime_relations_optimized(anime_id)
+            .await
+    }
+
+    async fn discover_franchise_details(
+        &self,
+        anime_id: u32,
+    ) -> AppResult<Vec<super::anilist::models::FranchiseRelation>> {
+        // Delegate to AniList adapter
+        self.anilist_adapter
+            .discover_complete_franchise_with_details(anime_id)
+            .await
+    }
+
+    async fn discover_categorized_franchise(
+        &self,
+        anime_id: u32,
+    ) -> AppResult<super::anilist::models::CategorizedFranchise> {
+        // Delegate to AniList adapter
+        self.anilist_adapter
+            .discover_categorized_franchise(anime_id)
+            .await
+    }
+
+    fn supports_relationships(&self) -> bool {
+        // AniList always supports relationships
+        true
     }
 }

@@ -274,7 +274,7 @@ async fn find_anilist_by_title(
             query
         );
 
-        match provider_service.search_anime(query, 10).await {
+        match provider_service.search_anime_internal(query, 10).await {
             Ok(results) => {
                 // Step 4: Find best match using existing fuzzy matching logic
                 let best_match = find_best_cross_provider_match(&jikan_data, &results);
@@ -382,7 +382,7 @@ async fn find_jikan_by_title(
             query
         );
 
-        match provider_service.search_anime(query, 10).await {
+        match provider_service.search_anime_internal(query, 10).await {
             Ok(results) => {
                 // Step 4: Find best match using existing fuzzy matching logic
                 let best_match = find_best_cross_provider_match(&anilist_data, &results);

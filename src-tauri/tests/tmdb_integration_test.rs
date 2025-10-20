@@ -1,7 +1,4 @@
-use miru_lib::modules::provider::{
-    infrastructure::adapters::{ProviderAdapter, TmdbAdapter},
-    AnimeProvider,
-};
+use miru_lib::modules::provider::{infrastructure::adapters::TmdbAdapter, AnimeProvider};
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -12,9 +9,8 @@ const POPULAR_ANIME_ID: u32 = 1429; // Attack on Titan - should always exist
 const POPULAR_SEARCH_TERM: &str = "Attack on Titan";
 
 #[tokio::test]
-async fn test_provider_adapter_trait_implementation() {
+async fn test_adapter_creation() {
     let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
-    assert_eq!(adapter.get_provider_type(), AnimeProvider::TMDB);
     assert!(adapter.can_make_request_now());
 }
 
@@ -73,7 +69,7 @@ async fn test_get_anime_by_id_success() {
 }
 
 #[tokio::test]
-async fn test_search_anime_basic() {
+async fn test_search_anime() {
     let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
 
     let result = timeout(TEST_TIMEOUT, adapter.search_anime(POPULAR_SEARCH_TERM, 5)).await;
@@ -292,28 +288,6 @@ async fn test_find_by_imdb_id() {
 }
 
 #[tokio::test]
-async fn test_get_season_now() {
-    let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
-
-    let result = timeout(TEST_TIMEOUT, adapter.get_season_now(3)).await;
-
-    match result {
-        Ok(Ok(results)) => {
-            println!("✅ Current season returned {} results", results.len());
-            for anime in results.iter().take(3) {
-                println!("  - {}", anime.anime.title.main);
-            }
-        }
-        Ok(Err(e)) => {
-            println!("⚠️ Current season API error: {}", e);
-        }
-        Err(_) => {
-            panic!("❌ Current season test timed out after {:?}", TEST_TIMEOUT);
-        }
-    }
-}
-
-#[tokio::test]
 async fn test_get_popular_japanese_shows() {
     let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
 
@@ -341,6 +315,7 @@ async fn test_get_popular_japanese_shows() {
 #[tokio::test]
 async fn test_rate_limiting() {
     let adapter = TmdbAdapter::new(TEST_API_KEY.to_string());
+
     let start = std::time::Instant::now();
 
     // Make multiple rapid requests
@@ -358,6 +333,7 @@ async fn test_rate_limiting() {
 #[tokio::test]
 async fn test_concurrent_requests() {
     let adapter = std::sync::Arc::new(TmdbAdapter::new(TEST_API_KEY.to_string()));
+
     let mut handles = vec![];
 
     // Make 3 concurrent requests

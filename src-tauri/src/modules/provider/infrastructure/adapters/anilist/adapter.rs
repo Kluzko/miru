@@ -3,21 +3,13 @@
 //! GraphQL-based adapter for the AniList API that implements the same interface
 //! as the Jikan adapter, providing comprehensive anime data retrieval capabilities.
 
-use async_trait::async_trait;
 use chrono::Datelike;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 
 use crate::{
     modules::provider::{
-        domain::entities::anime_data::AnimeData,
-        infrastructure::{
-            adapters::{
-                anilist::mapper::AnimeMapper, provider_repository_adapter::ProviderAdapter,
-            },
-            http_client::RateLimitClient,
-        },
-        AnimeProvider,
+        domain::entities::anime_data::AnimeData, infrastructure::http_client::RateLimitClient,
     },
     shared::errors::{AppError, AppResult},
 };
@@ -84,9 +76,8 @@ impl AniListAdapter {
     }
 }
 
-#[async_trait]
-impl ProviderAdapter for AniListAdapter {
-    async fn search_anime(&self, query: &str, limit: usize) -> AppResult<Vec<AnimeData>> {
+impl AniListAdapter {
+    pub async fn search_anime(&self, query: &str, limit: usize) -> AppResult<Vec<AnimeData>> {
         let variables = json!({
             "search": query,
             "page": 1,
@@ -118,7 +109,7 @@ impl ProviderAdapter for AniListAdapter {
         Ok(anime_data)
     }
 
-    async fn get_anime_by_id(&self, id: &str) -> AppResult<Option<AnimeData>> {
+    pub async fn get_anime_by_id(&self, id: &str) -> AppResult<Option<AnimeData>> {
         let anime_id: u32 = id
             .parse()
             .map_err(|_| AppError::ValidationError(format!("Invalid AniList ID: {}", id)))?;
@@ -145,124 +136,6 @@ impl ProviderAdapter for AniListAdapter {
 
         log::info!("AniList: Found anime by ID '{}'", id);
         Ok(Some(anime_data))
-    }
-
-    async fn get_anime(&self, id: u32) -> AppResult<Option<AnimeData>> {
-        self.get_anime_by_id(&id.to_string()).await
-    }
-
-    async fn get_anime_full(&self, id: u32) -> AppResult<Option<AnimeData>> {
-        let variables = json!({
-            "id": id
-        });
-
-        log::info!(
-            "AniList: Getting full anime details for ID '{}' (trait)",
-            id
-        );
-
-        let response: AniListMediaResponse = self
-            .make_graphql_request(MEDIA_DETAIL_QUERY, Some(variables))
-            .await?;
-
-        if let Some(anilist_media) = response.media {
-            let anime_data = self.mapper.map_to_anime_data(anilist_media).map_err(|e| {
-                AppError::MappingError(format!("Failed to map AniList data: {}", e))
-            })?;
-            log::info!(
-                "AniList: Retrieved full details for anime ID '{}' (trait)",
-                id
-            );
-            Ok(Some(anime_data))
-        } else {
-            log::info!("AniList: No anime found for ID '{}' (trait)", id);
-            Ok(None)
-        }
-    }
-
-    async fn search_anime_basic(&self, query: &str, limit: usize) -> AppResult<Vec<AnimeData>> {
-        self.search_anime(query, limit).await
-    }
-
-    async fn get_season_now(&self, limit: usize) -> AppResult<Vec<AnimeData>> {
-        // Calculate current season and year
-        let now = chrono::Utc::now();
-        let year = now.year();
-        let season = match now.month() {
-            1..=3 => "WINTER",
-            4..=6 => "SPRING",
-            7..=9 => "SUMMER",
-            10..=12 => "FALL",
-            _ => "FALL",
-        };
-
-        let variables = json!({
-            "perPage": limit,
-            "season": season,
-            "seasonYear": year
-        });
-
-        log::info!(
-            "AniList: Getting current season anime ({} {}) (trait)",
-            season,
-            year
-        );
-
-        let response: AniListSearchResponse = self
-            .make_graphql_request(SEASONAL_ANIME_QUERY, Some(variables))
-            .await?;
-
-        let anime_list = response.page.media;
-        let anime_data: Result<Vec<_>, _> = anime_list
-            .into_iter()
-            .map(|anime| self.mapper.map_to_anime_data(anime))
-            .collect();
-        anime_data.map_err(|e| AppError::MappingError(format!("Failed to map AniList data: {}", e)))
-    }
-
-    async fn get_season_upcoming(&self, limit: usize) -> AppResult<Vec<AnimeData>> {
-        let variables = json!({
-            "perPage": limit,
-            "status": "NOT_YET_RELEASED"
-        });
-
-        log::info!("AniList: Getting upcoming anime (trait)");
-
-        let response: AniListSearchResponse = self
-            .make_graphql_request(ANIME_SEARCH_QUERY, Some(variables))
-            .await?;
-
-        let anime_list = response.page.media;
-        let anime_data: Result<Vec<_>, _> = anime_list
-            .into_iter()
-            .map(|anime| self.mapper.map_to_anime_data(anime))
-            .collect();
-        anime_data.map_err(|e| AppError::MappingError(format!("Failed to map AniList data: {}", e)))
-    }
-
-    fn get_provider_type(&self) -> AnimeProvider {
-        AnimeProvider::AniList
-    }
-
-    fn can_make_request_now(&self) -> bool {
-        self.can_make_request_now()
-    }
-
-    async fn get_anime_relations(&self, id: u32) -> AppResult<Vec<(u32, String)>> {
-        // Use the working raw relations approach for now
-        let relations = self.fetch_raw_relations(id, 50).await?;
-
-        let mut simple_relations = Vec::new();
-        for relation in relations {
-            if let Some(node) = relation.node {
-                if let Some(related_id) = node.id {
-                    let relation_type = self.map_anilist_relation_type(&relation.relation_type);
-                    simple_relations.push((related_id as u32, relation_type));
-                }
-            }
-        }
-
-        Ok(simple_relations)
     }
 }
 

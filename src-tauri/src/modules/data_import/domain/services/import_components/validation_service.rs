@@ -79,7 +79,7 @@ impl ValidationService {
         &self,
         query: &str,
     ) -> AppResult<Vec<crate::modules::anime::AnimeDetailed>> {
-        match self.provider_service.search_anime(query, 1).await {
+        match self.provider_service.search_anime_internal(query, 1).await {
             Ok(results) if !results.is_empty() => {
                 LogContext::search_operation(query, Some("provider_service"), Some(results.len()));
                 Ok(results)

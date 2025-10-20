@@ -44,8 +44,14 @@ pub fn build_test_services_with_pool(pool: super::test_db::TestPool) -> TestServ
     let job_repo = Arc::new(JobRepositoryImpl::new(pool.clone()));
 
     let provider_repo = Arc::new(ProviderRepositoryAdapter::new());
-    let cache_repo = Arc::new(CacheAdapter::new());
-    let provider_service = Arc::new(ProviderService::new(provider_repo, cache_repo));
+    let _cache_repo = Arc::new(CacheAdapter::new());
+
+    // ProviderRepositoryAdapter implements all three repository traits
+    let provider_service = Arc::new(ProviderService::new(
+        provider_repo.clone(),
+        provider_repo.clone(),
+        provider_repo,
+    ));
 
     let anime_service = Arc::new(AnimeService::new(
         anime_repo.clone(),
